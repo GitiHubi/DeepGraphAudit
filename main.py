@@ -48,8 +48,8 @@ def main():
     parser.add_argument('-kl_div_alpha', type=float, default=0.0, help='the kl-divergence loss regularizer.')
 
     # model training parameter
-    parser.add_argument('-iterations', type=int, default=1001, help='the number of training iterations.')
-    parser.add_argument('-eval_iteration', type=int, default=100, help='the eval training iteration.')
+    parser.add_argument('-iterations', type=int, default=101, help='the number of training iterations.')
+    parser.add_argument('-eval_iteration', type=int, default=10, help='the eval training iteration.')
     parser.add_argument('-batch_size', type=int, default=128, help='the batch size.')
     parser.add_argument('-learning_rate', type=float, default=0.0001, help='the learning rate.')
     parser.add_argument('-device', type=str, default='cpu', help='the compute device.')
