@@ -70,7 +70,7 @@ class GraphAutoencoderExperiment(object):
         #### start training routine
 
         # init the EY data loader
-        train_loader = DataLoader(prepared_tensor_entries, batch_size=parameter['batch_size'], shuffle=True)
+        train_loader = DataLoader(prepared_tensor_entries, batch_size=parameter['batch_size'], shuffle=True, drop_last=False)
 
         # init the autoencoder model
         model = GNNAutoencoder.GNNAutoencoder(
@@ -86,6 +86,42 @@ class GraphAutoencoderExperiment(object):
 
         # init training optimizer
         optimizer = th.optim.Adam(model.parameters(), lr=parameter['learning_rate'])
+
+        # run the model training
+        model, average_train_loss = self.run_model_training(parameter=parameter, model=model, rec_criterion=rec_criterion, train_loader=train_loader, optimizer=optimizer, wandb_logging=wandb_logging, run=run)
+
+        #### start evaluation routine
+
+        # init the EY data loader
+        eval_loader = DataLoader(prepared_tensor_entries, batch_size=parameter['batch_size'], shuffle=False, drop_last=False)
+
+        # init aggregated categorical autoencoder loss
+        rec_criterion = th.nn.BCELoss().to(parameter['device'])
+
+        # init aggregated categorical autoencoder loss
+        rec_criterion_details = th.nn.BCELoss(reduce=False).to(parameter['device'])
+
+        # run the model evaluation
+        aggregated_entries, average_valid_loss = self.run_model_validation(parameter=parameter, model=model, rec_criterion=rec_criterion, rec_criterion_details=rec_criterion_details, eval_loader=eval_loader, aggregated_entries=aggregated_entries, wandb_logging=wandb_logging, run=run)
+
+        # log aggregated categorical entries
+        file_name = '{}_aggregated_entries_embedded_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
+        aggregated_entries.to_csv(os.path.join(parameter['res_sub_dir'], file_name), sep=',', encoding='utf-8')
+
+        # set visualization handler directory
+        self.vha.set_plot_dir(plot_dir=parameter['vis_sub_dir'])
+
+        # run the model visualization
+        self.run_model_visualization(parameter=parameter, aggregated_entries=aggregated_entries, average_train_loss=average_train_loss, average_valid_loss=average_valid_loss)
+
+        # case: wandb logging enabled
+        if parameter['wandb']:
+
+            # finish wandb run
+            run.finish()
+
+    # run the model training
+    def run_model_training(self, parameter, model, rec_criterion, train_loader, optimizer, run, wandb_logging):
 
         # set model in train mode
         model.train()
@@ -112,7 +148,7 @@ class GraphAutoencoderExperiment(object):
             optimizer.zero_grad()
 
             # clamp reconstructed matrix
-            adj_matrices_batch = th.clamp(adj_matrices_batch, min=0.0, max=1.0)
+            # adj_matrices_batch = th.clamp(adj_matrices_batch, min=0.0, max=1.0)
 
             # run model forward pass
             _, mu, sigma, feat_matrices_recon, adj_matrices_recon = model(feat_matrices_batch, adj_matrices_batch)
@@ -159,16 +195,11 @@ class GraphAutoencoderExperiment(object):
                 file_name = '{}_ae_gnn_model_checkpoint_itr_{}.pth'.format(parameter['exp_timestamp'], str(i).zfill(6))
                 self.uha.save_client_model_checkpoint(filename=file_name, iteration=i, model=model, optimizer=optimizer, chpt_dir=parameter['log_sub_dir'])
 
-        #### start evaluation routine
+        # return model training results
+        return model, average_train_loss
 
-        # init the EY data loader
-        eval_loader = DataLoader(prepared_tensor_entries, batch_size=parameter['batch_size'], shuffle=False)
-
-        # init aggregated categorical autoencoder loss
-        rec_criterion = th.nn.BCELoss().to(parameter['device'])
-
-        # init aggregated categorical autoencoder loss
-        rec_criterion_details = th.nn.BCELoss(reduce=False).to(parameter['device'])
+    # run the model evaluation
+    def run_model_validation(self, parameter, model, rec_criterion, rec_criterion_details, eval_loader, aggregated_entries, run, wandb_logging):
 
         # set model in evaluation mode
         model.eval()
@@ -180,27 +211,41 @@ class GraphAutoencoderExperiment(object):
         # init validation embeddings
         valid_embeddings = []
 
+        # init and wrap range of training iterations
+        validation_iterations = tqdm(range(0, len(eval_loader)))
+
         # case: mini-batches are still available
         for i, (adj_matrices_batch, feat_matrices_batch) in enumerate(eval_loader):
+
+            # update validation iterations
+            validation_iterations.update(i)
 
             # push the inputs to compute device
             adj_matrices_batch = adj_matrices_batch.to(parameter['device'])
             feat_matrices_batch = feat_matrices_batch.to(parameter['device'])
 
             # clamp reconstructed matrix
-            adj_matrices_batch = th.clamp(adj_matrices_batch, min=0.0, max=1.0)
+            # adj_matrices_batch = th.clamp(adj_matrices_batch, min=0.0, max=1.0)
 
             # run model forward pass
             valid_embeddings_batch, _, _, feat_matrices_recon, adj_matrices_recon = model(feat_matrices_batch, adj_matrices_batch)
 
             # compute and add categorical reconstruction loss
-            valid_batch_loss = rec_criterion(input=adj_matrices_recon, target=adj_matrices_batch)
+            valid_batch_rec_loss = rec_criterion(input=adj_matrices_recon, target=adj_matrices_batch)
 
             # compute and add categorical reconstruction loss
             valid_batch_loss_details = rec_criterion_details(input=adj_matrices_recon, target=adj_matrices_batch).mean(axis=1)
 
             # compute and collect average reconstruction loss
-            average_valid_loss += valid_batch_loss.cpu().detach().item()
+            average_valid_loss += valid_batch_rec_loss.cpu().detach().item()
+
+            # log validation progress
+            now = dt.datetime.utcnow().strftime('%m/%d/%Y %H:%M:%S')
+            validation_iterations.set_description(
+                (
+                    '[INFO {}] DeepAppleGraph :: iteration: {}, valid-loss: {}, train-rec-loss: {}'.format(str(now), str(i).zfill(2), str(np.round(valid_batch_rec_loss.cpu().detach().item(), 6)), str(np.round(valid_batch_rec_loss.cpu().detach().item(), 6)))
+                )
+            )
 
             # case: initial batch
             if i == 0:
@@ -234,25 +279,26 @@ class GraphAutoencoderExperiment(object):
         aggregated_entries['z1'] = valid_embeddings[:, 0]
         aggregated_entries['z2'] = valid_embeddings[:, 1]
 
-        # log aggregated categorical entries
-        file_name = '{}_aggregated_entries_embedded_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
-        aggregated_entries.to_csv(os.path.join(parameter['res_sub_dir'], file_name), sep=',', encoding='utf-8')
+        # close validation iteration
+        validation_iterations.close()
 
-        # set visualization handler directory
-        self.vha.set_plot_dir(plot_dir=parameter['vis_sub_dir'])
+        # return model evaluation results
+        return aggregated_entries, average_valid_loss
+
+    # run the model and result visualization
+    def run_model_visualization(self, parameter, aggregated_entries, average_train_loss, average_valid_loss):
 
         # visualize learned embeddings
         filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}.png'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
-        title = 'GNN AE Baseline - JE Embedding Distribution\niterations: {}, train-loss: {}'.format(str(parameter['iterations']).zfill(6), str(np.round((average_train_loss / parameter['iterations']), 6)))
+        title = 'GNN Autoencoder - Journal Entry Embedding Distribution\niterations: {}, avg-train-loss: {}, avg-valid-loss: {}'.format(str(parameter['iterations']).zfill(6), str(np.round((average_train_loss / parameter['iterations']), 6)), str(np.round((average_valid_loss / parameter['iterations']), 6)))
         self.vha.plot_embeddings_2d(data=aggregated_entries, z1_col_name='z1', z2_col_name='z2', filename=filename, title=title)
 
         # visualize learned embeddings in specific interval
         filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_interval.png'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
-        title = 'GNN AE Baseline - JE Embedding Distribution\niterations: {}, train-loss: {}'.format(str(parameter['iterations']).zfill(6), str(np.round((average_train_loss / parameter['iterations']), 6)))
+        title = 'GNN Autoencoder - Journal Entry Embedding Distribution\niterations: {}, avg-train-loss: {}, avg-valid-loss: {}'.format(str(parameter['iterations']).zfill(6), str(np.round((average_train_loss / parameter['iterations']), 6)), str(np.round((average_valid_loss / parameter['iterations']), 6)))
         self.vha.plot_embeddings_2d_interval(data=aggregated_entries, z1_col_name='z1', z2_col_name='z2', c_col_name='error', filename=filename, title=title, xlim=[-5.0, 5.0], ylim=[-5.0, 5.0]) # xlim=[18.5, 20.1], ylim=[-10.2, -11.5]
 
-        # case: wandb logging enabled
-        if parameter['wandb']:
-
-            # finish wandb run
-            run.finish()
+        # visualize learned embeddings interactively
+        filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
+        title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}'.format(str(parameter['iterations']).zfill(6), str(np.round((average_train_loss / parameter['iterations']), 6)), str(np.round((average_valid_loss / parameter['iterations']), 6)))
+        self.vha.plot_embeddings_2d_interactive(data=aggregated_entries, z1_col_name='z1', z2_col_name='z2', c_col_name='error', filename=filename, title=title)
