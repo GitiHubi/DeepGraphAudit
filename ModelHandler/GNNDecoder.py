@@ -20,6 +20,9 @@ class GNNDecoder(nn.Module):
         # init ReLU non-linearity
         self.relu = nn.ReLU()
 
+        # init Sigmoid non-linearity
+        self.sigmoid = nn.Sigmoid()
+
     # define decoder forward pass
     def forward(self, x):
 
@@ -33,7 +36,7 @@ class GNNDecoder(nn.Module):
         x = self.linear2(x)
 
         # run final Sigmoid non-linearity
-        x = torch.sigmoid(x)
+        x = self.sigmoid(x)
 
         # return encoder output
         return x
