@@ -1,3 +1,6 @@
+# import python libraries
+import math
+
 # import pytorch libraries
 import torch
 from torch import nn
@@ -7,23 +10,25 @@ import torch.nn.init as init
 class GraphConv(nn.Module):
 
     # define class constructor
-    def __init__(self, input_dim, output_dim):
+    def __init__(self, input_dim, output_dim, bias=True):
 
         # call super class constructor
         super(GraphConv, self).__init__()
 
-        # init weight matrix of graph convolutional layer
-        self.weight = nn.Parameter(torch.DoubleTensor(input_dim, output_dim))
+        # init linear layer weight matrix of graph convolutional layer
+        self.linear = nn.Linear(input_dim, output_dim, bias=bias).double()
+
+        # init weight parameter
+        nn.init.xavier_uniform_(self.linear.weight)
 
     # define forward pass
     def forward(self, x, adj):
 
-        # multiply adjacency matrix with identity matrix
+        # multiply adjacency matrix with features
         y = torch.matmul(adj, x)
 
-        # multiply output with weight matrix of graph convolutional layer
-        # performs the dimensionality reduction
-        y = torch.matmul(y, self.weight)
+        # perform the dimensionality reduction
+        y = self.linear(y)
 
         # return layer output
         return y
@@ -38,30 +43,21 @@ class GNNEncoder(nn.Module):
         super(GNNEncoder, self).__init__()
 
         # init first graph convolutional layer
-        self.conv1 = GraphConv(input_dim=input_dim, output_dim=hidden_dim)
+        self.conv1 = GraphConv(input_dim=input_dim, output_dim=hidden_dim, bias=True)
 
         # init second graph convolutional layer
-        self.conv2 = GraphConv(input_dim=hidden_dim, output_dim=embed_dim)
+        self.conv2 = GraphConv(input_dim=hidden_dim, output_dim=embed_dim, bias=True)
 
         # init VAE linear mu layer -> todo: fix double issue
-        self.linear_mu = nn.Linear(embed_dim, embed_dim).double()
+        self.linear_mu = nn.Linear(embed_dim, embed_dim, bias=True).double()
 
         # init VAE linear sigma layer -> todo: fix double issue
-        self.linear_sigma = nn.Linear(embed_dim, embed_dim).double()
+        self.linear_sigma = nn.Linear(embed_dim, embed_dim, bias=True).double()
 
         # init ReLU non-linearity
         self.relu = nn.ReLU()
 
-        # iterate over encoder modules
-        for m in self.modules():
-
-            # case: graph convolutional layer
-            if isinstance(m, GraphConv):
-
-                # init weights using xavier uniform initialisation
-                m.weight.data = init.xavier_uniform_(m.weight.data, gain=nn.init.calculate_gain("relu"))
-
-        # define encoder forward pass
+    # define encoder forward pass
     def forward(self, x, adj):
 
         # run first graph convolutional layer
@@ -73,8 +69,10 @@ class GNNEncoder(nn.Module):
         # run second graph convolutional layer
         x = self.conv2(x, adj)
 
-        # aggregate into one-dimensional vector
-        # using this to aggregate node info to graph info
+        # run ReLU non-linearity
+        x = self.relu(x)
+
+        # aggregate over all accounts into one-dimensional vector
         z = torch.sum(x, 1)
 
         # run VAE linear mu layer
