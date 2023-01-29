@@ -103,6 +103,11 @@ class GraphAutoencoderExperiment(object):
         no_accounts = adj_matrices[0].shape[1]
         no_features = feat_matrices[0].shape[1]
 
+        # update the encoder input dim depending on the number of features
+        parameter['encoder_dim'].insert(0, no_features)
+        parameter['decoder_dim'].insert(len(parameter['decoder_dim']), no_accounts * no_features)
+        parameter['decoder_dim'].insert(len(parameter['decoder_dim']), no_accounts * no_accounts)
+
         # convert the EY training data to pytorch tensor
         prepared_tensor_entries = AccountingGNNDataset(adj_matrices=adj_matrices, feat_matrices=feat_matrices)
 
@@ -111,15 +116,17 @@ class GraphAutoencoderExperiment(object):
         # init the EY data loader
         train_loader = DataLoader(prepared_tensor_entries, batch_size=parameter['batch_size'], shuffle=True, drop_last=False)
 
-        # init the autoencoder model
+        # init the graph convolutional autoencoder model
         model = GNNAutoencoder.GNNAutoencoder(
-            no_accounts=no_accounts,
-            no_features=no_features,
-            hidden_dim=parameter['hidden_dim'],
-            embed_dim=parameter['embed_dim'],
-            output_dim=no_accounts * (no_accounts + 1) // 2,  # entries_statistics['no_accounts'] * (entries_statistics['no_accounts'] + 1) // 2,
+            encoder_dim=parameter['encoder_dim'],
+            bottleneck='linear',
+            decoder_dim=parameter['decoder_dim'],
             device=parameter['device']
         ).to(parameter['device'])
+
+        # log configuration processing
+        now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
+        print('[INFO {}] DeepAppleGraph :: GNN Autoencoder Model {}.'.format(now, str(model)))
 
         # case: BCE loss training
         if parameter['loss'] == 'bce':
@@ -217,14 +224,17 @@ class GraphAutoencoderExperiment(object):
             # run model forward pass
             _, mu, sigma, feat_matrices_recon, adj_matrices_recon = model(feat_matrices_batch, adj_matrices_batch)
 
-            # compute categorical reconstruction loss
-            train_batch_rec_loss = rec_criterion(input=adj_matrices_recon, target=adj_matrices_batch)
+            # compute feature vector loss
+            train_batch_feat_rec_loss = rec_criterion(input=feat_matrices_recon, target=feat_matrices_batch)
+
+            # compute adjacency matrix loss
+            train_batch_adj_rec_loss = rec_criterion(input=adj_matrices_recon, target=adj_matrices_batch)
 
             # compute kl-divergence loss
-            train_batch_kl_div_loss = parameter['kl_div_alpha'] * (-0.5 * th.sum(1 + sigma - mu.pow(2) - sigma.exp()))
+            # train_batch_kl_div_loss = parameter['kl_div_alpha'] * (-0.5 * th.sum(1 + sigma - mu.pow(2) - sigma.exp()))
 
             # compute train batch loss
-            train_batch_loss = train_batch_rec_loss + train_batch_kl_div_loss
+            train_batch_loss = train_batch_feat_rec_loss + train_batch_adj_rec_loss
 
             # compute and collect average reconstruction loss
             average_train_loss += train_batch_loss.cpu().detach().item()
@@ -233,7 +243,7 @@ class GraphAutoencoderExperiment(object):
             now = dt.datetime.utcnow().strftime('%m/%d/%Y %H:%M:%S')
             training_iterations.set_description(
                 (
-                    '[INFO {}] DeepAppleGraph :: iteration: {}, train-loss: {}, train-rec-loss: {}, train-kld-loss: {}'.format(str(now), str(i).zfill(2), str(np.round(train_batch_loss.cpu().detach().item(), 8)), str(np.round(train_batch_rec_loss.cpu().detach().item(), 8)), str(np.round(train_batch_kl_div_loss.cpu().detach().item(), 8)))
+                    '[INFO {}] DeepAppleGraph :: iteration: {}, train-loss: {}, train-feat-loss: {}, train-adj-loss: {}'.format(str(now), str(i).zfill(2), str(np.round(train_batch_loss.cpu().detach().item(), 8)), str(np.round(train_batch_feat_rec_loss.cpu().detach().item(), 8)), str(np.round(train_batch_adj_rec_loss.cpu().detach().item(), 8)))
                 )
             )
 
@@ -269,7 +279,7 @@ class GraphAutoencoderExperiment(object):
         model.eval()
 
         # init validation reconstruction losses
-        average_valid_loss = 0.0
+        average_valid_batch_loss = 0.0
         valid_losses = []
 
         # init validation embeddings
@@ -294,20 +304,33 @@ class GraphAutoencoderExperiment(object):
             # run model forward pass
             valid_embeddings_batch, _, _, feat_matrices_recon, adj_matrices_recon = model(feat_matrices_batch, adj_matrices_batch)
 
-            # compute and add categorical reconstruction loss
-            valid_batch_rec_loss = rec_criterion(input=adj_matrices_recon, target=adj_matrices_batch)
+            ### compute batch reconstruction loss
+
+            # compute feature vector loss
+            valid_batch_feat_rec_loss = rec_criterion(input=feat_matrices_recon, target=feat_matrices_batch)
+
+            # compute adjacency matrix loss
+            valid_batch_adj_rec_loss = rec_criterion(input=adj_matrices_recon, target=adj_matrices_batch)
+
+            # compute and add adjacency and feature reconstruction loss
+            average_valid_batch_loss += valid_batch_feat_rec_loss.cpu().detach().item() + valid_batch_adj_rec_loss.cpu().detach().item()
+
+            ### compute detailed reconstruction losses
 
             # compute and add categorical reconstruction loss
-            valid_batch_loss_details = rec_criterion_details(input=adj_matrices_recon, target=adj_matrices_batch).mean(axis=1)
+            valid_batch_feat_rec_loss_details = rec_criterion_details(input=feat_matrices_recon, target=feat_matrices_batch).mean(axis=1).mean(axis=1)
 
-            # compute and collect average reconstruction loss
-            average_valid_loss += valid_batch_rec_loss.cpu().detach().item()
+            # compute and add categorical reconstruction loss
+            valid_batch_adj_rec_loss_details = rec_criterion_details(input=adj_matrices_recon, target=adj_matrices_batch).mean(axis=1).mean(axis=1)
+
+            # compute and add adjacency and feature reconstruction loss
+            valid_batch_loss_details = valid_batch_feat_rec_loss_details + valid_batch_adj_rec_loss_details
 
             # log validation progress
             now = dt.datetime.utcnow().strftime('%m/%d/%Y %H:%M:%S')
             validation_iterations.set_description(
                 (
-                    '[INFO {}] DeepAppleGraph :: iteration: {}, valid-loss: {}, train-rec-loss: {}'.format(str(now), str(i).zfill(2), str(np.round(valid_batch_rec_loss.cpu().detach().item(), 6)), str(np.round(valid_batch_rec_loss.cpu().detach().item(), 6)))
+                    '[INFO {}] DeepAppleGraph :: iteration: {}, valid-loss: {}, valid-feat-loss: {}, valid-adj-loss: {}'.format(str(now), str(i).zfill(2), str(np.round(average_valid_batch_loss, 6)), str(np.round(valid_batch_feat_rec_loss.cpu().detach().item(), 6)), str(np.round(valid_batch_adj_rec_loss.cpu().detach().item(), 6)))
                 )
             )
 
@@ -324,7 +347,7 @@ class GraphAutoencoderExperiment(object):
             else:
 
                 # collect validation losses
-                valid_losses = np.vstack((valid_losses, valid_batch_loss_details.cpu().detach().numpy()))
+                valid_losses = np.hstack((valid_losses, valid_batch_loss_details.cpu().detach().numpy()))
 
                 # collect validation embeddings
                 valid_embeddings = np.vstack((valid_embeddings, valid_embeddings_batch.cpu().detach().numpy()))
@@ -333,13 +356,13 @@ class GraphAutoencoderExperiment(object):
             if parameter['wandb']:
 
                 # fill wandb log dict
-                wandb_logging['002_model_validation/avg_eval_loss'] = average_valid_loss / (i + 1)
+                wandb_logging['002_model_validation/avg_eval_loss'] = average_valid_batch_loss / (i + 1)
 
                 # log training progress
                 run.log(wandb_logging)
 
         # update journal entries with embedding
-        aggregated_entries['Y_REC_ERROR'] = valid_losses.mean(axis=1)
+        aggregated_entries['Y_REC_ERROR'] = valid_losses
         aggregated_entries['z1'] = valid_embeddings[:, 0]
         aggregated_entries['z2'] = valid_embeddings[:, 1]
 
@@ -347,7 +370,7 @@ class GraphAutoencoderExperiment(object):
         validation_iterations.close()
 
         # return model evaluation results
-        return aggregated_entries, average_valid_loss
+        return aggregated_entries, average_valid_batch_loss / (i + 1)
 
     # run the anomaly detection
     def run_anomaly_detection(self, parameter, aggregated_entries):
@@ -444,15 +467,15 @@ class GraphAutoencoderExperiment(object):
 
         # visualize learned embeddings interactively
         filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
-        title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}'.format(str(parameter['iterations']).zfill(6), str(np.round((average_train_loss / parameter['iterations']), 6)), str(np.round((average_valid_loss / parameter['iterations']), 6)))
+        title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}'.format(str(parameter['dataset']).upper(), str(parameter['iterations']).zfill(6), str(np.round((average_train_loss / parameter['iterations']), 6)), str(np.round((average_valid_loss / parameter['iterations']), 6)))
         self.vha.plot_embeddings_2d_interactive(data=data, hover=hover_attributes, z1_col_name='z1', z2_col_name='z2', c_col_name='Y_REC_ERROR', filename=filename, title=title)
 
         # visualize learned embeddings interactively
         filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_anomalies_score_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
-        title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}<br>Anomaly-Algorithm: {}, Global-Anomalies: {}, Local-Anomalies: {}'.format(str(parameter['iterations']).zfill(6), str(np.round((average_train_loss / parameter['iterations']), 6)), str(np.round((average_valid_loss / parameter['iterations']), 6)), str(parameter['algo']).upper(), str(data[data['Y_ANOMALY_CLASS'] == -1].shape[0]), str(data[data['Y_ANOMALY_CLASS'] == -2].shape[0]))
+        title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}<br>Anomaly-Algorithm: {}, Global-Anomalies: {}, Local-Anomalies: {}'.format(str(parameter['dataset']).upper(), str(parameter['iterations']).zfill(6), str(np.round((average_train_loss / parameter['iterations']), 6)), str(np.round((average_valid_loss / parameter['iterations']), 6)), str(parameter['algo']).upper(), str(data[data['Y_ANOMALY_CLASS'] == -1].shape[0]), str(data[data['Y_ANOMALY_CLASS'] == -2].shape[0]))
         self.vha.plot_embeddings_2d_anomalies_score_interactive(data=data, hover=hover_attributes, z1_col_name='z1', z2_col_name='z2', c_col_name='Y_ANOMALY_SCORE', filename=filename, title=title)
 
         # visualize learned embeddings interactively
         filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_anomalies_cluster_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
-        title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}<br>Anomaly-Algorithm: {}, Global-Anomalies: {}, Local-Anomalies: {}'.format(str(parameter['iterations']).zfill(6), str(np.round((average_train_loss / parameter['iterations']), 6)), str(np.round((average_valid_loss / parameter['iterations']), 6)), str(parameter['algo']).upper(), str(data[data['Y_ANOMALY_CLASS'] == -1].shape[0]), str(data[data['Y_ANOMALY_CLASS'] == -2].shape[0]))
+        title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}<br>Anomaly-Algorithm: {}, Global-Anomalies: {}, Local-Anomalies: {}'.format(str(parameter['dataset']).upper(), str(parameter['iterations']).zfill(6), str(np.round((average_train_loss / parameter['iterations']), 6)), str(np.round((average_valid_loss / parameter['iterations']), 6)), str(parameter['algo']).upper(), str(data[data['Y_ANOMALY_CLASS'] == -1].shape[0]), str(data[data['Y_ANOMALY_CLASS'] == -2].shape[0]))
         self.vha.plot_embeddings_2d_anomalies_cluster_interactive(data=data, hover=hover_attributes, z1_col_name='z1', z2_col_name='z2', c_col_name='Y_ANOMALY_CLASS', filename=filename, title=title)
