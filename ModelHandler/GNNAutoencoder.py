@@ -10,16 +10,19 @@ import ModelHandler.GNNDecoder as GNNDecoder
 class GNNAutoencoder(nn.Module):
 
     # define class constructor
-    def __init__(self, input_dim, hidden_dim, embed_dim, output_dim, device='cpu'):
+    def __init__(self, no_accounts, no_features, hidden_dim, embed_dim, output_dim, device='cpu'):
 
         # call super class constructor
         super(GNNAutoencoder, self).__init__()
 
-        # set global input dimension
-        self.input_dim = input_dim
+        # set global account dimension
+        self.no_accounts = no_accounts
+
+        # set global feature dimension
+        self.no_features = no_features
 
         # init graph VAE encoder model
-        self.encoder = GNNEncoder.GNNEncoder(input_dim, hidden_dim, embed_dim)
+        self.encoder = GNNEncoder.GNNEncoder(self.no_features, hidden_dim, embed_dim)
 
         # init graph VAE decoder model
         self.decoder = GNNDecoder.GNNDecoder(hidden_dim, embed_dim, output_dim)
@@ -38,13 +41,13 @@ class GNNAutoencoder(nn.Module):
         z, mu, sigma = self.encoder(features, adj_matrices)
 
         # compute sigma sample
-        sigma_sample = sigma.mul(0.5).exp_()
+        # sigma_sample = sigma.mul(0.5).exp_()
 
         # determine random sample of epsilon
-        eps = torch.autograd.Variable(torch.randn(sigma.size())).to(self.device)
+        # eps = torch.autograd.Variable(torch.randn(sigma.size())).to(self.device)
 
         # determine stochastic latent z sample
-        z = eps * sigma_sample + mu
+        # z = eps * sigma_sample + mu
 
         # run decoder forward pass
         reconstructions = self.decoder(z)
@@ -53,29 +56,31 @@ class GNNAutoencoder(nn.Module):
         for i, reconstruction in enumerate(reconstructions):
 
             # reconstruct upper triangular matrix from output vector
-            recon_adj_lower = self.reconstruct_adj_upper(output_vector=reconstruction, num_nodes=self.input_dim)
+            recon_adj_lower = self.reconstruct_adj_upper(output_vector=reconstruction)
 
             # reconstruct full adjacency matrix from triangular matrix
             recon_adj_matrix = self.recover_full_adj_from_lower(recon_adj_lower)
 
-            # determine reconstructed features
-            recon_feature = torch.sum(recon_adj_matrix, axis=1)
-
-            # collect reconstructed features and adjacency matrices
-            recon_features[i, :, :] = recon_feature
+            # collect reconstructed adjacency matrices
             recon_adj_matrices[i, :, :] = recon_adj_matrix
+
+            # determine reconstructed features
+            #recon_feature = torch.sum(recon_adj_matrix, axis=1)
+
+            # collect reconstructed features matrices
+            #recon_features[i, :] = recon_feature
 
         # return reconstructed features and adjacency matrix
         return z, mu, sigma, recon_features, recon_adj_matrices
 
     # reconstruct upper triangular matrix
-    def reconstruct_adj_upper(self, output_vector, num_nodes):
+    def reconstruct_adj_upper(self, output_vector):
 
         # init new max-node adjacency matrix
-        adj_matrix = torch.zeros(num_nodes, num_nodes).double()
+        adj_matrix = torch.zeros(self.no_accounts, self.no_accounts).double().to(self.device)
 
         # init new upper triangular boolean matrix
-        adj_matrix_upper_triangular = torch.triu(torch.ones(num_nodes, num_nodes)) == 1
+        adj_matrix_upper_triangular = torch.triu(torch.ones(self.no_accounts, self.no_accounts)) == 1
 
         # fill new max-node adjacency matrix
         adj_matrix[adj_matrix_upper_triangular] = output_vector
