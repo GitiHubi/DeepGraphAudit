@@ -18,8 +18,11 @@ class GraphConv(nn.Module):
         # init linear layer weight matrix of graph convolutional layer
         self.linear = nn.Linear(input_dim, output_dim, bias=bias).double()
 
-        # init weight parameter
+        # init weight parameters
         nn.init.xavier_uniform_(self.linear.weight)
+
+        # init bias parameters
+        nn.init.constant_(self.linear.bias, 0.0)
 
     # define forward pass
     def forward(self, x, adj):
@@ -37,40 +40,77 @@ class GraphConv(nn.Module):
 class GNNEncoder(nn.Module):
 
     # define class constructor
-    def __init__(self, input_dim, hidden_dim, embed_dim):
+    def __init__(self, hidden_size, bottleneck, bias):
 
         # call super class constructor
         super(GNNEncoder, self).__init__()
 
-        # init first graph convolutional layer
-        self.conv1 = GraphConv(input_dim=input_dim, output_dim=hidden_dim, bias=True)
+        # init graph convolutional layers
+        self.layers = self.init_layers(hidden_size, bias=bias)
 
-        # init second graph convolutional layer
-        self.conv2 = GraphConv(input_dim=hidden_dim, output_dim=embed_dim, bias=True)
+        # init layer leaky relu non linear activations
+        self.activations = nn.LeakyReLU(negative_slope=0.4, inplace=True)
 
-        # init VAE linear mu layer -> todo: fix double issue
-        self.linear_mu = nn.Linear(embed_dim, embed_dim, bias=True).double()
+        # init VAE linear mu layer -> todo: fix double issue, think about keeping here
+        self.linear_mu = nn.Linear(hidden_size[-1], hidden_size[-1], bias=True).double()
 
-        # init VAE linear sigma layer -> todo: fix double issue
-        self.linear_sigma = nn.Linear(embed_dim, embed_dim, bias=True).double()
+        # init VAE linear sigma layer -> todo: fix double issue, think about keeping here
+        self.linear_sigma = nn.Linear(hidden_size[-1], hidden_size[-1], bias=True).double()
 
-        # init ReLU non-linearity
-        self.relu = nn.ReLU()
+        # case: linear bottleneck
+        if bottleneck == 'linear':
+
+            self.bottleneck = nn.Identity()
+
+
+        # case: leaky relu bottleneck
+        elif bottleneck == 'lrelu':
+
+            self.bottleneck = nn.LeakyReLU(negative_slope=0.4, inplace=True)
+
+        # case: tanh bottleneck
+        elif bottleneck == 'tanh':
+
+            self.bottleneck = nn.Tanh()
+
+    # init encoder layers
+    def init_layers(self, layer_dimensions, bias):
+
+        # init graph convolutional layers
+        layers = []
+
+        # iterate over layer dimensions
+        for i in range(0, len(layer_dimensions)-1):
+
+            # create init graph convolutional layer
+            layer = GraphConv(input_dim=layer_dimensions[i], output_dim=layer_dimensions[i + 1], bias=bias)
+
+            # register linear graph convolutional layer
+            self.add_module('layer_' + str(i), layer)
+
+            # collect graph convolutional layer
+            layers.append(layer)
+
+        # return graph convolutional layers
+        return layers
 
     # define encoder forward pass
     def forward(self, x, adj):
 
-        # run first graph convolutional layer
-        x = self.conv1(x, adj)
+        # iterate over distinct graph convolutional layers
+        for i in range(0, len(self.layers)):
 
-        # run ReLU non-linearity
-        x = self.relu(x)
+            # case: non-bottleneck layer
+            if i < len(self.layers)-1:
 
-        # run second graph convolutional layer
-        x = self.conv2(x, adj)
+                # run forward pass through layer
+                x = self.activations(self.layers[i](x, adj))
 
-        # run ReLU non-linearity
-        x = self.relu(x)
+            # case: bottleneck layer
+            else:
+
+                # run forward pass through layer
+                x = self.bottleneck(self.layers[i](x, adj))
 
         # aggregate over all accounts into one-dimensional vector
         z = torch.sum(x, 1)
