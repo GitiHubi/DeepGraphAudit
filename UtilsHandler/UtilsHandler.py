@@ -10,6 +10,7 @@ os.environ["NUMEXPR_NUM_THREADS"] = "4" # export NUMEXPR_NUM_THREADS=6
 print("NUMBER OF THREADS ARE LIMITED NOW ...")
 
 # import libraries
+import json as js
 import argparse
 import torch
 
@@ -27,20 +28,20 @@ class UtilsHandler(object):
         if architecture == 'ae_baseline':
 
             # create experiment directory name
-            experiment_directory_name = '{}_exp_{}_sd_{}_itr_{}_bt_{}_lr_{}_lt_{}_enc_{}_dec_{}_{}'.format(
-                str(param['exp_timestamp']), str(architecture), str(param['seed']), str(param['iterations']),
-                str(param['batch_size']), str(param['learning_rate']), str(param['bottleneck']), str(len(param['encoder_dim'])),
-                str(len(param['decoder_dim'])), str(param['exp_postfix'])
+            experiment_directory_name = '{}_exp_{}_ds_{}_sd_{}_itr_{}_bt_{}_lr_{}_lt_{}_enc_{}_dec_{}_{}'.format(
+                str(param['exp_timestamp']), str(architecture), str(param['dataset']), str(param['seed']),
+                str(param['iterations']), str(param['batch_size']), str(param['learning_rate']), str(param['bottleneck']),
+                str(len(param['encoder_dim'])), str(len(param['decoder_dim'])), str(param['exp_postfix'])
             )
 
         # case: gnn architecture
         if architecture == 'ae_graph':
 
             # create experiment directory name
-            experiment_directory_name = '{}_exp_{}_sd_{}_itr_{}_bt_{}_lr_{}_hd_{}_ed_{}_{}'.format(
-                str(param['exp_timestamp']), str(architecture), str(param['seed']), str(param['iterations']),
-                str(param['batch_size']), str(param['learning_rate']), str(param['hidden_dim']),
-                str(param['embed_dim']), str(param['exp_postfix'])
+            experiment_directory_name = '{}_exp_{}_ds_{}_sd_{}_itr_{}_bt_{}_lr_{}_hd_{}_ed_{}_{}'.format(
+                str(param['exp_timestamp']), str(architecture), str(param['dataset']), str(param['seed']),
+                str(param['iterations']), str(param['batch_size']), str(param['learning_rate']),
+                str(param['hidden_dim']), str(param['embed_dim']), str(param['exp_postfix'])
             )
 
         # case: potential additional architecture
@@ -125,3 +126,15 @@ class UtilsHandler(object):
 
             # raise error
             raise argparse.ArgumentTypeError('[ERROR] Boolean value expected.')
+
+    # save experiment parameter
+    def save_experiment_parameter(self, param, parameter_dir):
+
+        # create filename
+        filename = str('{}_DeepAppleGraph_exp_parameter.txt'.format(str(param['exp_timestamp'])))
+
+        # write experimental config to file
+        with open(os.path.join(parameter_dir, filename), 'w') as outfile:
+
+            # dump experiment parameters
+            js.dump(param, outfile)
