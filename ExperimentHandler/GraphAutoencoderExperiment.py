@@ -73,23 +73,26 @@ class GraphAutoencoderExperiment(object):
         # save experiment parameters
         self.uha.save_experiment_parameter(param=parameter, parameter_dir=parameter['par_sub_dir'])
 
+        # init dataset statistics
+        statistics = {}
+
         # case: e&y dataset
         if parameter['dataset'] == 'ey':
 
             # load the EY training data
-            posting_ids, adj_matrices, feat_matrices, aggregated_entries, selected_aggregated_entries, hover_attributes, entries_statistics = self.dha.get_gnn_data_range_ey(parameter=parameter)
+            posting_ids, adj_matrices, feat_matrices, aggregated_entries, selected_aggregated_entries, statistics = self.dha.get_gnn_data_range_ey(parameter=parameter, statistics=statistics)
 
         # case: serpro dataset
         elif parameter['dataset'] == 'serpro':
 
             # load the Serpro training data
-            posting_ids, adj_matrices, feat_matrices, aggregated_entries, entries_statistics = self.dha.get_gnn_data_range_serpro(parameter=parameter)
+            posting_ids, adj_matrices, feat_matrices, aggregated_entries, dataset_statistics = self.dha.get_gnn_data_range_serpro(parameter=parameter, statistics=statistics)
 
         # case: sap dataset
         elif parameter['dataset'] == 'sap':
 
             # load the Serpro training data
-            posting_ids, adj_matrices, feat_matrices, aggregated_entries, selected_aggregated_entries, hover_attributes, entries_statistics = self.dha.get_gnn_data_range_sap(parameter=parameter)
+            posting_ids, adj_matrices, feat_matrices, aggregated_entries, selected_aggregated_entries, dataset_statistics = self.dha.get_gnn_data_range_sap(parameter=parameter, statistics=statistics)
 
         # log aggregated entries
         file_name = '{}_aggregated_entries_all_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
@@ -118,6 +121,8 @@ class GraphAutoencoderExperiment(object):
 
         # init the graph convolutional autoencoder model
         model = GNNAutoencoder.GNNAutoencoder(
+            # token_no=statistics['token_no'],
+            # data_dim=parameter['data_dim'],
             encoder_dim=parameter['encoder_dim'],
             bottleneck='linear',
             decoder_dim=parameter['decoder_dim'],
@@ -183,7 +188,7 @@ class GraphAutoencoderExperiment(object):
         self.vha.set_plot_dir(plot_dir=parameter['vis_sub_dir'])
 
         # run the model visualization
-        self.run_model_visualization(parameter=parameter, data=selected_aggregated_entries, hover_attributes=hover_attributes, average_train_loss=average_train_loss, average_valid_loss=average_valid_loss)
+        self.run_model_visualization(parameter=parameter, statistics=statistics, data=selected_aggregated_entries, average_train_loss=average_train_loss, average_valid_loss=average_valid_loss)
 
         # case: wandb logging enabled
         if parameter['wandb']:
@@ -453,7 +458,7 @@ class GraphAutoencoderExperiment(object):
         return aggregated_entries
 
     # run the model and result visualization
-    def run_model_visualization(self, parameter, data, hover_attributes, average_train_loss, average_valid_loss):
+    def run_model_visualization(self, parameter, statistics, data, average_train_loss, average_valid_loss):
 
         # visualize learned embeddings
         filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}.png'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
@@ -468,14 +473,14 @@ class GraphAutoencoderExperiment(object):
         # visualize learned embeddings interactively
         filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
         title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}'.format(str(parameter['dataset']).upper(), str(parameter['iterations']).zfill(6), str(np.round((average_train_loss / parameter['iterations']), 6)), str(np.round((average_valid_loss / parameter['iterations']), 6)))
-        self.vha.plot_embeddings_2d_interactive(data=data, hover=hover_attributes, z1_col_name='z1', z2_col_name='z2', c_col_name='Y_REC_ERROR', filename=filename, title=title)
+        self.vha.plot_embeddings_2d_interactive(data=data, hover=statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name='Y_REC_ERROR', filename=filename, title=title)
 
         # visualize learned embeddings interactively
         filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_anomalies_score_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
         title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}<br>Anomaly-Algorithm: {}, Global-Anomalies: {}, Local-Anomalies: {}'.format(str(parameter['dataset']).upper(), str(parameter['iterations']).zfill(6), str(np.round((average_train_loss / parameter['iterations']), 6)), str(np.round((average_valid_loss / parameter['iterations']), 6)), str(parameter['algo']).upper(), str(data[data['Y_ANOMALY_CLASS'] == -1].shape[0]), str(data[data['Y_ANOMALY_CLASS'] == -2].shape[0]))
-        self.vha.plot_embeddings_2d_anomalies_score_interactive(data=data, hover=hover_attributes, z1_col_name='z1', z2_col_name='z2', c_col_name='Y_ANOMALY_SCORE', filename=filename, title=title)
+        self.vha.plot_embeddings_2d_anomalies_score_interactive(data=data, hover=statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name='Y_ANOMALY_SCORE', filename=filename, title=title)
 
         # visualize learned embeddings interactively
         filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_anomalies_cluster_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
         title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}<br>Anomaly-Algorithm: {}, Global-Anomalies: {}, Local-Anomalies: {}'.format(str(parameter['dataset']).upper(), str(parameter['iterations']).zfill(6), str(np.round((average_train_loss / parameter['iterations']), 6)), str(np.round((average_valid_loss / parameter['iterations']), 6)), str(parameter['algo']).upper(), str(data[data['Y_ANOMALY_CLASS'] == -1].shape[0]), str(data[data['Y_ANOMALY_CLASS'] == -2].shape[0]))
-        self.vha.plot_embeddings_2d_anomalies_cluster_interactive(data=data, hover=hover_attributes, z1_col_name='z1', z2_col_name='z2', c_col_name='Y_ANOMALY_CLASS', filename=filename, title=title)
+        self.vha.plot_embeddings_2d_anomalies_cluster_interactive(data=data, hover=statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name='Y_ANOMALY_CLASS', filename=filename, title=title)
