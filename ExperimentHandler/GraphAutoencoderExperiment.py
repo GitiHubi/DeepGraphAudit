@@ -74,25 +74,26 @@ class GraphAutoencoderExperiment(object):
         self.uha.save_experiment_parameter(param=parameter, parameter_dir=parameter['par_sub_dir'])
 
         # init dataset statistics
-        statistics = {}
+        dataset_statistics = {}
+        experiment_statistics = {}
 
         # case: e&y dataset
         if parameter['dataset'] == 'ey':
 
             # load the EY training data
-            posting_ids, adj_matrices, feat_matrices, aggregated_entries, selected_aggregated_entries, statistics = self.dha.get_gnn_data_range_ey(parameter=parameter, statistics=statistics)
+            posting_ids, adj_matrices, feat_matrices, aggregated_entries, selected_aggregated_entries, statistics = self.dha.get_gnn_data_range_ey(parameter=parameter, statistics=dataset_statistics)
 
         # case: serpro dataset
         elif parameter['dataset'] == 'serpro':
 
             # load the Serpro training data
-            posting_ids, adj_matrices, feat_matrices, aggregated_entries, dataset_statistics = self.dha.get_gnn_data_range_serpro(parameter=parameter, statistics=statistics)
+            posting_ids, adj_matrices, feat_matrices, aggregated_entries, dataset_statistics = self.dha.get_gnn_data_range_serpro(parameter=parameter, statistics=dataset_statistics)
 
         # case: sap dataset
         elif parameter['dataset'] == 'sap':
 
             # load the Serpro training data
-            posting_ids, adj_matrices, feat_matrices, aggregated_entries, selected_aggregated_entries, dataset_statistics = self.dha.get_gnn_data_range_sap(parameter=parameter, statistics=statistics)
+            posting_ids, adj_matrices, feat_matrices, aggregated_entries, selected_aggregated_entries, dataset_statistics = self.dha.get_gnn_data_range_sap(parameter=parameter, statistics=dataset_statistics)
 
         # log aggregated entries
         file_name = '{}_aggregated_entries_all_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
@@ -101,6 +102,31 @@ class GraphAutoencoderExperiment(object):
         # log selected aggregated entries
         file_name = '{}_aggregated_entries_selected_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
         selected_aggregated_entries.to_csv(os.path.join(parameter['res_sub_dir'], file_name), sep=',', encoding='utf-8')
+
+        # init experiment statistics
+        summary_cols = [
+            'timestamp'
+            , 'seed'
+            , 'iterations'
+            , 'batch_size'
+            , 'learning_rate'
+            , 'encoder_dim'
+            , 'decoder_dim'
+            , 'embed_dim'
+            , 'bottleneck'
+            , 'train_loss'
+            , 'train_adj_loss'
+            , 'train_fea_loss'
+            , 'valid_loss'
+            , 'valid_adj_loss'
+            , 'valid_fea_loss'
+            , 'algo'
+            , 'min_cluster_size'
+            , 'min_samples'
+            , 'no_global_anomalies'
+            , 'no_local_anomalies'
+        ]
+        experiment_results = pd.DataFrame(columns=summary_cols)
 
         # determine the number of accounts and features
         no_accounts = adj_matrices[0].shape[1]
@@ -124,7 +150,7 @@ class GraphAutoencoderExperiment(object):
             # token_no=statistics['token_no'],
             # data_dim=parameter['data_dim'],
             encoder_dim=parameter['encoder_dim'],
-            bottleneck='linear',
+            bottleneck=parameter['bottleneck'],
             decoder_dim=parameter['decoder_dim'],
             device=parameter['device']
         ).to(parameter['device'])
@@ -149,7 +175,7 @@ class GraphAutoencoderExperiment(object):
         optimizer = th.optim.Adam(model.parameters(), lr=parameter['learning_rate'])
 
         # run the model training
-        model, average_train_loss = self.run_model_training(parameter=parameter, model=model, rec_criterion=rec_criterion, train_loader=train_loader, optimizer=optimizer, wandb_logging=wandb_logging, run=run)
+        model, experiment_statistics = self.run_model_training(parameter=parameter, experiment_statistics=experiment_statistics, model=model, rec_criterion=rec_criterion, train_loader=train_loader, optimizer=optimizer, wandb_logging=wandb_logging, run=run)
 
         #### start evaluation routine
 
@@ -175,10 +201,10 @@ class GraphAutoencoderExperiment(object):
             rec_criterion_details = th.nn.MSELoss(reduce=False).to(parameter['device'])
 
         # run the model evaluation
-        selected_aggregated_entries, average_valid_loss = self.run_model_validation(parameter=parameter, model=model, rec_criterion=rec_criterion, rec_criterion_details=rec_criterion_details, eval_loader=eval_loader, aggregated_entries=selected_aggregated_entries, wandb_logging=wandb_logging, run=run)
+        selected_aggregated_entries, experiment_statistics = self.run_model_validation(parameter=parameter, experiment_statistics=experiment_statistics, model=model, rec_criterion=rec_criterion, rec_criterion_details=rec_criterion_details, eval_loader=eval_loader, aggregated_entries=selected_aggregated_entries, wandb_logging=wandb_logging, run=run)
 
         #### start anomaly detection routine
-        selected_aggregated_entries = self.run_anomaly_detection(parameter, selected_aggregated_entries)
+        selected_aggregated_entries, global_anomalies, local_anomalies = self.run_anomaly_detection(parameter, selected_aggregated_entries)
 
         # log aggregated entries
         file_name = '{}_aggregated_entries_selected_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
@@ -188,7 +214,38 @@ class GraphAutoencoderExperiment(object):
         self.vha.set_plot_dir(plot_dir=parameter['vis_sub_dir'])
 
         # run the model visualization
-        self.run_model_visualization(parameter=parameter, statistics=statistics, data=selected_aggregated_entries, average_train_loss=average_train_loss, average_valid_loss=average_valid_loss)
+        self.run_model_visualization(parameter=parameter, statistics=statistics, data=selected_aggregated_entries, average_train_loss=experiment_statistics['average_train_loss'], average_valid_loss=experiment_statistics['average_valid_loss'])
+
+        # collect experiment statistics
+        exp_stats = {
+            'timestamp': str(dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S'))
+            , 'seed': parameter['seed']
+            , 'iterations': parameter['iterations']
+            , 'batch_size': parameter['batch_size']
+            , 'learning_rate': parameter['learning_rate']
+            , 'encoder_dim': parameter['encoder_dim']
+            , 'decoder_dim': parameter['decoder_dim']
+            , 'embed_dim': parameter['embed_dim']
+            , 'bottleneck': parameter['bottleneck']
+            , 'train_loss': np.round(experiment_statistics['average_train_loss'], 6)
+            , 'train_adj_loss': np.round(experiment_statistics['average_adj_train_loss'], 6)
+            , 'train_fea_loss': np.round(experiment_statistics['average_fea_train_loss'], 6)
+            , 'valid_loss': np.round(experiment_statistics['average_valid_loss'], 6)
+            , 'valid_adj_loss': np.round(experiment_statistics['average_adj_valid_loss'], 6)
+            , 'valid_fea_loss': np.round(experiment_statistics['average_fea_valid_loss'], 6)
+            , 'algo': parameter['algo']
+            , 'min_cluster_size': parameter['min_cluster_size']
+            , 'min_samples':  parameter['min_samples']
+            , 'no_global_anomalies': int(global_anomalies.shape[0])
+            , 'no_local_anomalies': int(local_anomalies.shape[0])
+        }
+
+        # determine and collect training summary statistics of current epoch
+        experiment_results = experiment_results.append(exp_stats, ignore_index=True)
+
+        # save current experiment statistics
+        file_name = '{}_experiment_results_sd_{}_ep_{}.csv'.format(parameter['exp_timestamp'], parameter['seed'], parameter['iterations'])
+        experiment_results.to_csv(os.path.join(parameter['sta_sub_dir'], file_name), sep=',', encoding='utf-8')
 
         # case: wandb logging enabled
         if parameter['wandb']:
@@ -197,13 +254,15 @@ class GraphAutoencoderExperiment(object):
             run.finish()
 
     # run the model training
-    def run_model_training(self, parameter, model, rec_criterion, train_loader, optimizer, run, wandb_logging):
+    def run_model_training(self, parameter, experiment_statistics, model, rec_criterion, train_loader, optimizer, run, wandb_logging):
 
         # set model in train mode
         model.train()
 
         # init the training loss
-        average_train_loss = 0.0
+        experiment_statistics['average_train_loss'] = 0.0
+        experiment_statistics['average_adj_train_loss'] = 0.0
+        experiment_statistics['average_fea_train_loss'] = 0.0
 
         # push aggregated losses to compute device
         rec_criterion = rec_criterion.to(parameter['device'])
@@ -242,7 +301,9 @@ class GraphAutoencoderExperiment(object):
             train_batch_loss = train_batch_feat_rec_loss + train_batch_adj_rec_loss
 
             # compute and collect average reconstruction loss
-            average_train_loss += train_batch_loss.cpu().detach().item()
+            experiment_statistics['average_train_loss'] += train_batch_loss.cpu().detach().item()
+            experiment_statistics['average_adj_train_loss'] += train_batch_adj_rec_loss.cpu().detach().item()
+            experiment_statistics['average_fea_train_loss'] += train_batch_feat_rec_loss.cpu().detach().item()
 
             # log training progress
             now = dt.datetime.utcnow().strftime('%m/%d/%Y %H:%M:%S')
@@ -262,7 +323,9 @@ class GraphAutoencoderExperiment(object):
             if parameter['wandb']:
 
                 # fill wandb log dict
-                wandb_logging['001_model_training/avg_train_loss'] = average_train_loss / (i + 1)
+                wandb_logging['001_model_training/avg_train_loss'] = experiment_statistics['average_train_loss'] / (i + 1)
+                wandb_logging['001_model_training/avg_adj_train_loss'] = experiment_statistics['average_adj_train_loss'] / (i + 1)
+                wandb_logging['001_model_training/avg_fea_train_loss'] = experiment_statistics['average_fea_train_loss'] / (i + 1)
 
                 # log training progress
                 run.log(wandb_logging)
@@ -274,30 +337,36 @@ class GraphAutoencoderExperiment(object):
                 file_name = '{}_ae_gnn_model_checkpoint_itr_{}.pth'.format(parameter['exp_timestamp'], str(i).zfill(6))
                 self.uha.save_client_model_checkpoint(filename=file_name, iteration=i, model=model, optimizer=optimizer, chpt_dir=parameter['log_sub_dir'])
 
+        # determine finale average losses per iteration
+        experiment_statistics['average_train_loss'] /= parameter['iterations']
+        experiment_statistics['average_adj_train_loss'] /= parameter['iterations']
+        experiment_statistics['average_fea_train_loss'] /= parameter['iterations']
+
         # return model training results
-        return model, average_train_loss
+        return model, experiment_statistics
 
     # run the model evaluation
-    def run_model_validation(self, parameter, model, rec_criterion, rec_criterion_details, eval_loader, aggregated_entries, run, wandb_logging):
+    def run_model_validation(self, parameter, experiment_statistics, model, rec_criterion, rec_criterion_details, eval_loader, aggregated_entries, run, wandb_logging):
 
         # set model in evaluation mode
         model.eval()
 
         # init validation reconstruction losses
-        average_valid_batch_loss = 0.0
+        experiment_statistics['average_valid_loss'] = 0.0
+        experiment_statistics['average_adj_valid_loss'] = 0.0
+        experiment_statistics['average_fea_valid_loss'] = 0.0
+
+        # init detailed validation reconstruction losses
         valid_losses = []
 
         # init validation embeddings
         valid_embeddings = []
 
         # init and wrap range of training iterations
-        validation_iterations = tqdm(range(0, len(eval_loader)))
+        validation_iterations = tqdm(total=len(eval_loader))
 
         # case: mini-batches are still available
         for i, (adj_matrices_batch, feat_matrices_batch) in enumerate(eval_loader):
-
-            # update validation iterations
-            validation_iterations.update(i)
 
             # push the inputs to compute device
             adj_matrices_batch = adj_matrices_batch.to(parameter['device'])
@@ -318,7 +387,11 @@ class GraphAutoencoderExperiment(object):
             valid_batch_adj_rec_loss = rec_criterion(input=adj_matrices_recon, target=adj_matrices_batch)
 
             # compute and add adjacency and feature reconstruction loss
-            average_valid_batch_loss += valid_batch_feat_rec_loss.cpu().detach().item() + valid_batch_adj_rec_loss.cpu().detach().item()
+            valid_batch_loss = valid_batch_feat_rec_loss.cpu().detach().item() + valid_batch_adj_rec_loss.cpu().detach().item()
+
+            experiment_statistics['average_valid_loss'] += valid_batch_loss
+            experiment_statistics['average_adj_valid_loss'] += valid_batch_adj_rec_loss.cpu().detach().item()
+            experiment_statistics['average_fea_valid_loss'] += valid_batch_feat_rec_loss.cpu().detach().item()
 
             ### compute detailed reconstruction losses
 
@@ -335,7 +408,7 @@ class GraphAutoencoderExperiment(object):
             now = dt.datetime.utcnow().strftime('%m/%d/%Y %H:%M:%S')
             validation_iterations.set_description(
                 (
-                    '[INFO {}] DeepAppleGraph :: iteration: {}, valid-loss: {}, valid-feat-loss: {}, valid-adj-loss: {}'.format(str(now), str(i).zfill(2), str(np.round(average_valid_batch_loss, 6)), str(np.round(valid_batch_feat_rec_loss.cpu().detach().item(), 6)), str(np.round(valid_batch_adj_rec_loss.cpu().detach().item(), 6)))
+                    '[INFO {}] DeepAppleGraph :: iteration: {}, valid-loss: {}, valid-feat-loss: {}, valid-adj-loss: {}'.format(str(now), str(i).zfill(2), str(np.round(valid_batch_loss, 6)), str(np.round(valid_batch_feat_rec_loss.cpu().detach().item(), 6)), str(np.round(valid_batch_adj_rec_loss.cpu().detach().item(), 6)))
                 )
             )
 
@@ -357,14 +430,19 @@ class GraphAutoencoderExperiment(object):
                 # collect validation embeddings
                 valid_embeddings = np.vstack((valid_embeddings, valid_embeddings_batch.cpu().detach().numpy()))
 
-                # case: wandb logging enabled
+            # case: wandb logging enabled
             if parameter['wandb']:
 
                 # fill wandb log dict
-                wandb_logging['002_model_validation/avg_eval_loss'] = average_valid_batch_loss / (i + 1)
+                wandb_logging['001_model_training/avg_valid_loss'] = experiment_statistics['average_valid_loss'] / (i + 1)
+                wandb_logging['001_model_training/avg_adj_valid_loss'] = experiment_statistics['average_adj_valid_loss'] / (i + 1)
+                wandb_logging['001_model_training/avg_fea_valid_loss'] = experiment_statistics['average_fea_valid_loss'] / (i + 1)
 
                 # log training progress
                 run.log(wandb_logging)
+
+            # update validation iterations
+            validation_iterations.update(1)
 
         # update journal entries with embedding
         aggregated_entries['Y_REC_ERROR'] = valid_losses
@@ -374,8 +452,13 @@ class GraphAutoencoderExperiment(object):
         # close validation iteration
         validation_iterations.close()
 
+        # determine final average losses per iteration
+        experiment_statistics['average_valid_loss'] /= parameter['iterations']
+        experiment_statistics['average_adj_valid_loss'] /= parameter['iterations']
+        experiment_statistics['average_fea_valid_loss'] /= parameter['iterations']
+
         # return model evaluation results
-        return aggregated_entries, average_valid_batch_loss / (i + 1)
+        return aggregated_entries, experiment_statistics
 
     # run the anomaly detection
     def run_anomaly_detection(self, parameter, aggregated_entries):
@@ -454,8 +537,14 @@ class GraphAutoencoderExperiment(object):
         # collect local outlier factor anomaly scores results
         aggregated_entries['Y_ANOMALY_SCORE'] = scores
 
+        # determine global anomalies
+        global_anomalies = aggregated_entries[aggregated_entries['Y_ANOMALY_CLASS'] == -1]
+
+        # determine local anomalies
+        local_anomalies = aggregated_entries[aggregated_entries['Y_ANOMALY_CLASS'] == -2]
+
         # return anomaly detection results
-        return aggregated_entries
+        return aggregated_entries, global_anomalies, local_anomalies
 
     # run the model and result visualization
     def run_model_visualization(self, parameter, statistics, data, average_train_loss, average_valid_loss):
