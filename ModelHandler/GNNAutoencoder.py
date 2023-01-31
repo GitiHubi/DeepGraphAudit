@@ -15,6 +15,12 @@ class GNNAutoencoder(nn.Module):
         # call super class constructor
         super(GNNAutoencoder, self).__init__()
 
+        # init graph VAE embedding model
+        # self.embedder = nn.Embedding(token_no, data_dim)
+
+        # init graph VAE embedding model parameters
+        #nn.init.xavier_uniform_(self.embedder.weight)
+
         # init graph VAE encoder model
         self.encoder = GNNEncoder.GNNEncoder(encoder_dim, bottleneck, bias)
 
@@ -26,6 +32,9 @@ class GNNAutoencoder(nn.Module):
 
     # define graph VAE forward pass
     def forward(self, feat_matrices, adj_matrices):
+
+        # run embedding forward pass
+        # feat_matrices = self.embedder(feat_matrices)
 
         # run encoder forward pass
         z, mu, sigma = self.encoder(feat_matrices, adj_matrices)
