@@ -37,7 +37,7 @@ def main():
     parser.add_argument('-exp_postfix', type=str, default='poc', help='postfix of experimental runs.')
 
     # data parameter
-    parser.add_argument('-dataset', help='', nargs='?', type=str,  default='ey') # ey, serpro, sap
+    parser.add_argument('-dataset', help='', nargs='?', type=str,  default='sap') # ey, serpro, sap
     parser.add_argument('-sample_eval', help='', nargs='?', type=str, default='False')
     parser.add_argument('-sample_size', help='', nargs='?', type=int, default=1001)
     parser.add_argument('-min_line_items', help='', nargs='?', type=int, default=2)
@@ -45,13 +45,14 @@ def main():
 
     # model architecture parameter
     parser.add_argument('-seed', type=int, default=1111, help='seed value for deterministic results.')
+    parser.add_argument('-data_dim', type=int, default=10, help='the dimension of the data embeddings.')
     parser.add_argument('-encoder_dim', nargs='+', default=[64, 32, 16, 8, 4, 2], help='the dimensions of the encoder gnn layers.')
     parser.add_argument('-decoder_dim', nargs='+', default=[2, 4, 8, 16, 32, 64], help='the dimensions of the decoder fc layers.')
     parser.add_argument('-hidden_dim', type=int, default=64, help='the dimension of the first gnn layer.')
     parser.add_argument('-embed_dim', type=int, default=2, help='the dimension of the graph embeddings.')
 
     # model training parameter
-    parser.add_argument('-iterations', type=int, default=2001, help='the number of training iterations.')
+    parser.add_argument('-iterations', type=int, default=101, help='the number of training iterations.')
     parser.add_argument('-eval_iteration', type=int, default=100, help='the eval training iteration.')
     parser.add_argument('-batch_size', type=int, default=128, help='the batch size.')
     parser.add_argument('-loss', type=str, default='mse', help='the training and validation loss.')
