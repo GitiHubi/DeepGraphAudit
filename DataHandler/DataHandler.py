@@ -218,7 +218,7 @@ class DataHandler(object):
         statistics['je_header_features'] = ['Y_BLART', 'Y_BLART_TEXT', 'Y_USNAM', 'Y_TCODE']
         statistics['je_segment_features_numerical'] = ['Y_DMBTR']
 
-        statistics['hover_attributes'] = ['Y_JE_IDENTIFIER', 'Y_BUZEI', 'Y_ACCOUNT_TYPE', 'Y_ACCOUNT_CLASS', 'Y_GL_ACCOUNT_NUMBER', 'Y_GL_ACCOUNT_NAME', 'Y_PREPARER_ID', 'Y_SOURCE', 'Y_DMBTR']
+        statistics['hover_attributes'] = ['Y_BELNR', 'Y_BUZEI', 'Y_BLART', 'Y_BLART_TEXT', 'Y_USNAM', 'Y_TCODE', 'Y_HKONT', 'Y_HKONT_TEXT', 'Y_DMBTR']
 
         # determine the categorical attributes
         cat_attr = [
@@ -566,6 +566,8 @@ class DataHandler(object):
         # drop duplicate identifier column
         features = features.loc[:,~features.columns.duplicated()]
 
+        ### prepare adjacency matrix and feature vector filling
+
         # init adjacency and feature matrices
         adj_matrices = np.zeros([len(posting_ids), no_posting_accounts, no_posting_accounts])
         feat_matrices = np.zeros([len(posting_ids), no_posting_accounts, features.shape[1] - 1])
@@ -657,8 +659,11 @@ class DataHandler(object):
         # iterate over posting accounts
         for account in posting_accounts:
 
+            # determine current posting account features
+            posting_account_features = posting_features[posting_features[je_gl_account_code_field] == account]
+
             # fill posting features
-            feat_matrix[account, :] = posting_features.to_numpy()[0][1:]
+            feat_matrix[account, :] = posting_account_features.to_numpy()[0][1:]
 
         # return feature matrix
         return feat_matrix
@@ -726,6 +731,9 @@ class DataHandler(object):
                 # collect one-hot encoding of current attribute
                 encoded_entries = pd.concat([encoded_entries, encoded_attribute], axis=1)
 
+        # add journal account fields to encoded journal entry attributes
+        encoded_entries.insert(loc=0, column='{}_CODE'.format(str(statistics['je_gl_account_field'])), value=entries['{}_CODE'.format(str(statistics['je_gl_account_field']))])
+
         # add journal entry identifier to encoded journal entry attributes
         encoded_entries.insert(loc=0, column=statistics['je_identifier_field'], value=entries[statistics['je_identifier_field']])
 
@@ -765,6 +773,9 @@ class DataHandler(object):
 
                 # collect one-hot encoding of current attribute
                 encoded_entries = pd.concat([encoded_entries, encoded_attribute], axis=1)
+
+        # add journal account fields to encoded journal entry attributes
+        encoded_entries.insert(loc=0, column='{}_CODE'.format(str(statistics['je_gl_account_field'])), value=entries['{}_CODE'.format(str(statistics['je_gl_account_field']))])
 
         # add journal entry identifier to encoded journal entry attributes
         encoded_entries.insert(loc=0, column=statistics['je_identifier_field'], value=entries[statistics['je_identifier_field']])
