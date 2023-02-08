@@ -27,6 +27,9 @@ from sklearn.svm import OneClassSVM
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.ensemble import IsolationForest
 
+from sklearn.metrics import make_scorer
+from sklearn.model_selection import RandomizedSearchCV
+
 # import hdbscan library
 import hdbscan
 
@@ -52,6 +55,12 @@ class GraphAutoencoderExperiment(object):
         # init visualization handler
         self.vha = VisualisationHandler.VisualizationHandler()
 
+        # init wandb log
+        self.wandb_log = {}
+
+        # init wandb run
+        self.wandb_run = {}
+
     # run graph autoencoder experiment
     def run_experiement(self, parameter):
 
@@ -59,13 +68,10 @@ class GraphAutoencoderExperiment(object):
         if parameter['wandb']:
 
             # init weights and biases log
-            run = wandb.init(project='DeepAppleGraph', group='{}'.format(str(parameter['base_dir'].split('/')[-1])), name='{}_ae_graph_sd_{}_ds_{}_{}'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['dataset']), str(parameter['exp_postfix'])))
+            self.wandb_run = wandb.init(project='DeepAppleGraph', group='{}'.format(str(parameter['base_dir'].split('/')[-1])), name='{}_ae_graph_sd_{}_ds_{}_{}'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['dataset']), str(parameter['exp_postfix'])))
 
             # add wandb experiment configuration
-            run.config.update(parameter)
-
-            # init wandb log dictionary
-            wandb_logging = {}
+            self.wandb_run.config.update(parameter)
 
         # create experiment directory
         parameter['exp_dir'], parameter['par_sub_dir'], parameter['sta_sub_dir'], parameter['res_sub_dir'], parameter['vis_sub_dir'], parameter['log_sub_dir'] = self.uha.create_experiment_directory(param=parameter, parent_dir=parameter['base_dir'], architecture='ae_graph')
@@ -81,7 +87,7 @@ class GraphAutoencoderExperiment(object):
         if parameter['dataset'] == 'ey':
 
             # load the EY training data
-            posting_ids, adj_matrices, feat_matrices, aggregated_entries, selected_aggregated_entries, statistics = self.dha.get_gnn_data_range_ey(parameter=parameter, statistics=dataset_statistics)
+            posting_ids, adj_matrices, feat_matrices, aggregated_entries, selected_aggregated_entries, dataset_statistics = self.dha.get_gnn_data_range_ey(parameter=parameter, statistics=dataset_statistics)
 
         # case: serpro dataset
         elif parameter['dataset'] == 'serpro':
@@ -109,11 +115,16 @@ class GraphAutoencoderExperiment(object):
             , 'seed'
             , 'iterations'
             , 'batch_size'
-            , 'learning_rate'
+            , 'learning_rate_start'
+            , 'learning_rate_iteration'
+            , 'beta'
             , 'encoder_dim'
             , 'decoder_dim'
             , 'embed_dim'
             , 'bottleneck'
+            , 'no_accounts'
+            , 'feat_embed_dim'
+            , 'no_features'
             , 'train_loss'
             , 'train_adj_loss'
             , 'train_fea_loss'
@@ -123,32 +134,36 @@ class GraphAutoencoderExperiment(object):
             , 'algo'
             , 'min_cluster_size'
             , 'min_samples'
+            , 'metric'
             , 'no_global_anomalies'
             , 'no_local_anomalies'
         ]
-        experiment_results = pd.DataFrame(columns=summary_cols)
+        experiment_log = pd.DataFrame(columns=summary_cols)
 
         # determine the number of accounts and features
-        no_accounts = adj_matrices[0].shape[1]
-        no_features = feat_matrices[0].shape[1]
+        experiment_statistics['no_accounts'] = dataset_statistics['no_posting_accounts']
+        experiment_statistics['no_features'] = dataset_statistics['no_posting_features'] * parameter['feat_embed_dim']
 
         # update the encoder input dim depending on the number of features
-        parameter['encoder_dim'].insert(0, no_features)
-        parameter['decoder_dim'].insert(len(parameter['decoder_dim']), no_accounts * no_features)
-        parameter['decoder_dim'].insert(len(parameter['decoder_dim']), no_accounts * no_accounts)
+        parameter['encoder_dim'].insert(0, experiment_statistics['no_features'])
+        parameter['decoder_dim'].insert(len(parameter['decoder_dim']), experiment_statistics['no_accounts'] * experiment_statistics['no_features'])
+        parameter['decoder_dim'].insert(len(parameter['decoder_dim']), experiment_statistics['no_accounts'] * experiment_statistics['no_accounts'])
 
         # convert the EY training data to pytorch tensor
         prepared_tensor_entries = AccountingGNNDataset(adj_matrices=adj_matrices, feat_matrices=feat_matrices)
 
         #### start training routine
 
-        # init the EY data loader
-        train_loader = DataLoader(prepared_tensor_entries, batch_size=parameter['batch_size'], shuffle=True, drop_last=False)
+        # init the EY train data loader
+        train_loader = DataLoader(prepared_tensor_entries, batch_size=parameter['train_batch_size'], shuffle=True, drop_last=False)
+
+        # init the EY eval data loader
+        eval_loader = DataLoader(prepared_tensor_entries, batch_size=parameter['eval_batch_size'], shuffle=False, drop_last=False)
 
         # init the graph convolutional autoencoder model
         model = GNNAutoencoder.GNNAutoencoder(
-            # token_no=statistics['token_no'],
-            # data_dim=parameter['data_dim'],
+            statistics=dataset_statistics,
+            feat_embed_dim=parameter['feat_embed_dim'],
             encoder_dim=parameter['encoder_dim'],
             bottleneck=parameter['bottleneck'],
             decoder_dim=parameter['decoder_dim'],
@@ -163,106 +178,89 @@ class GraphAutoencoderExperiment(object):
         if parameter['loss'] == 'bce':
 
             # init aggregated BCE autoencoder loss
-            rec_criterion = th.nn.BCELoss().to(parameter['device'])
-
-        # case: MSE loss training
-        elif parameter['loss'] == 'mse':
-
-            # init aggregated MSE autoencoder loss
-            rec_criterion = th.nn.MSELoss().to(parameter['device'])
-
-        # init training optimizer
-        optimizer = th.optim.Adam(model.parameters(), lr=parameter['learning_rate'])
-
-        # run the model training
-        model, experiment_statistics = self.run_model_training(parameter=parameter, experiment_statistics=experiment_statistics, model=model, rec_criterion=rec_criterion, train_loader=train_loader, optimizer=optimizer, wandb_logging=wandb_logging, run=run)
-
-        #### start evaluation routine
-
-        # init the EY data loader
-        eval_loader = DataLoader(prepared_tensor_entries, batch_size=parameter['batch_size'], shuffle=False, drop_last=False)
-
-        # case: BCE loss training
-        if parameter['loss'] == 'bce':
-
-            # init aggregated BCE autoencoder loss
-            rec_criterion = th.nn.BCELoss().to(parameter['device'])
+            rec_criterion = th.nn.BCELoss(reduce=True, reduction='mean').to(parameter['device'])
 
             # init detailed BCE autoencoder loss
-            rec_criterion_details = th.nn.BSELoss(reduce=False).to(parameter['device'])
+            rec_criterion_details = th.nn.BCELoss(reduce=False).to(parameter['device'])
 
         # case: MSE loss training
         elif parameter['loss'] == 'mse':
 
             # init aggregated MSE autoencoder loss
-            rec_criterion = th.nn.MSELoss().to(parameter['device'])
+            rec_criterion = th.nn.MSELoss(reduce=True, reduction='mean').to(parameter['device'])
 
             # init detailed MSE autoencoder loss
             rec_criterion_details = th.nn.MSELoss(reduce=False).to(parameter['device'])
 
+        # init training optimizer
+        optimizer = th.optim.Adam(model.parameters(), lr=parameter['learning_rate'], weight_decay=parameter['weight_decay'])
+
+        # init learning rate scheduler
+        scheduler = th.optim.lr_scheduler.StepLR(optimizer, step_size=int(parameter['iterations'] / parameter['learning_rate_steps']), gamma=0.1)
+
+        # run the model training
+        model, experiment_statistics, experiment_log = self.run_model_training(parameter=parameter, data_statistics=dataset_statistics, experiment_statistics=experiment_statistics, model=model, rec_criterion=rec_criterion, rec_criterion_details=rec_criterion_details, train_loader=train_loader, eval_loader=eval_loader, optimizer=optimizer, scheduler=scheduler, aggregated_entries=selected_aggregated_entries, experiment_log=experiment_log)
+
+        #### start evaluation routine
+
         # run the model evaluation
-        selected_aggregated_entries, experiment_statistics = self.run_model_validation(parameter=parameter, experiment_statistics=experiment_statistics, model=model, rec_criterion=rec_criterion, rec_criterion_details=rec_criterion_details, eval_loader=eval_loader, aggregated_entries=selected_aggregated_entries, wandb_logging=wandb_logging, run=run)
+        selected_aggregated_entries, experiment_statistics = self.run_model_validation(parameter=parameter, experiment_statistics=experiment_statistics, model=model, rec_criterion=rec_criterion, rec_criterion_details=rec_criterion_details, eval_loader=eval_loader, aggregated_entries=selected_aggregated_entries)
 
         #### start anomaly detection routine
         selected_aggregated_entries, global_anomalies, local_anomalies = self.run_anomaly_detection(parameter, selected_aggregated_entries)
+
+        # determine number of clusters
+        experiment_statistics['no_clusters'] = int(len(selected_aggregated_entries['Y_ANOMALY_CLASS'].unique())-2)
+
+        # determine number of global and local anomalies
+        experiment_statistics['no_global_anomalies'] = int(global_anomalies.shape[0])
+        experiment_statistics['no_local_anomalies'] = int(local_anomalies.shape[0])
 
         # log aggregated entries
         file_name = '{}_aggregated_entries_selected_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
         selected_aggregated_entries.to_csv(os.path.join(parameter['res_sub_dir'], file_name), sep=',', encoding='utf-8')
 
+        # determine current learning rate
+        experiment_statistics['learning_rate'] = optimizer.state_dict()['param_groups'][0]['lr']
+
+        # log experiment results
+        file_name = '{}_experiment_log_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
+        experiment_log = self.save_experiment_log(parameter=parameter, experiment_statistics=experiment_statistics, experiment_log=experiment_log, file_name=file_name)
+
         # set visualization handler directory
         self.vha.set_plot_dir(plot_dir=parameter['vis_sub_dir'])
 
         # run the model visualization
-        self.run_model_visualization(parameter=parameter, statistics=statistics, data=selected_aggregated_entries, average_train_loss=experiment_statistics['average_train_loss'], average_valid_loss=experiment_statistics['average_valid_loss'])
-
-        # collect experiment statistics
-        exp_stats = {
-            'timestamp': str(dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S'))
-            , 'seed': parameter['seed']
-            , 'iterations': parameter['iterations']
-            , 'batch_size': parameter['batch_size']
-            , 'learning_rate': parameter['learning_rate']
-            , 'encoder_dim': parameter['encoder_dim']
-            , 'decoder_dim': parameter['decoder_dim']
-            , 'embed_dim': parameter['embed_dim']
-            , 'bottleneck': parameter['bottleneck']
-            , 'train_loss': np.round(experiment_statistics['average_train_loss'], 6)
-            , 'train_adj_loss': np.round(experiment_statistics['average_adj_train_loss'], 6)
-            , 'train_fea_loss': np.round(experiment_statistics['average_fea_train_loss'], 6)
-            , 'valid_loss': np.round(experiment_statistics['average_valid_loss'], 6)
-            , 'valid_adj_loss': np.round(experiment_statistics['average_adj_valid_loss'], 6)
-            , 'valid_fea_loss': np.round(experiment_statistics['average_fea_valid_loss'], 6)
-            , 'algo': parameter['algo']
-            , 'min_cluster_size': parameter['min_cluster_size']
-            , 'min_samples':  parameter['min_samples']
-            , 'no_global_anomalies': int(global_anomalies.shape[0])
-            , 'no_local_anomalies': int(local_anomalies.shape[0])
-        }
-
-        # determine and collect training summary statistics of current epoch
-        experiment_results = experiment_results.append(exp_stats, ignore_index=True)
-
-        # save current experiment statistics
-        file_name = '{}_experiment_results_sd_{}_ep_{}.csv'.format(parameter['exp_timestamp'], parameter['seed'], parameter['iterations'])
-        experiment_results.to_csv(os.path.join(parameter['sta_sub_dir'], file_name), sep=',', encoding='utf-8')
+        self.run_model_visualization(parameter=parameter, data_statistics=dataset_statistics, experiment_statistics=experiment_statistics, data=selected_aggregated_entries, average_train_loss=experiment_statistics['average_train_loss'], average_valid_loss=experiment_statistics['average_valid_loss'], iteration=parameter['iterations'])
 
         # case: wandb logging enabled
         if parameter['wandb']:
 
+            # save current experiment statistics to wandb
+            self.wandb_run.summary['no_accounts'] = experiment_statistics['no_accounts']
+            self.wandb_run.summary['no_features'] = experiment_statistics['no_features']
+
+            self.wandb_run.summary['min_cluster_size'] = parameter['min_cluster_size']
+            self.wandb_run.summary['min_samples'] = parameter['min_samples']
+            self.wandb_run.summary['metric'] = parameter['metric']
+
+            self.wandb_run.summary['no_clusters'] = experiment_statistics['no_clusters']
+            self.wandb_run.summary['no_global_anomalies'] = experiment_statistics['no_global_anomalies']
+            self.wandb_run.summary['no_local_anomalies'] = experiment_statistics['no_local_anomalies']
+
             # finish wandb run
-            run.finish()
+            self.wandb_run.finish()
 
     # run the model training
-    def run_model_training(self, parameter, experiment_statistics, model, rec_criterion, train_loader, optimizer, run, wandb_logging):
+    def run_model_training(self, parameter, data_statistics, experiment_statistics, model, rec_criterion, rec_criterion_details, train_loader, eval_loader, optimizer, scheduler, aggregated_entries, experiment_log):
 
         # set model in train mode
         model.train()
 
         # init the training loss
-        experiment_statistics['average_train_loss'] = 0.0
-        experiment_statistics['average_adj_train_loss'] = 0.0
-        experiment_statistics['average_fea_train_loss'] = 0.0
+        average_train_loss = 0.0
+        average_adj_train_loss = 0.0
+        average_fea_train_loss = 0.0
 
         # push aggregated losses to compute device
         rec_criterion = rec_criterion.to(parameter['device'])
@@ -282,28 +280,25 @@ class GraphAutoencoderExperiment(object):
             # reset optimizer gradients
             optimizer.zero_grad()
 
-            # clamp reconstructed matrix
-            # adj_matrices_batch = th.clamp(adj_matrices_batch, min=0.0, max=1.0)
+            # determine feature embeddings
+            feat_matrices_batch_embedded = model.embedd_features_batch(feat_matrices_batch)
 
             # run model forward pass
-            _, mu, sigma, feat_matrices_recon, adj_matrices_recon = model(feat_matrices_batch, adj_matrices_batch)
+            _, mu, sigma, feat_matrices_recon, adj_matrices_recon = model(feat_matrices_batch_embedded, adj_matrices_batch)
 
             # compute feature vector loss
-            train_batch_feat_rec_loss = rec_criterion(input=feat_matrices_recon, target=feat_matrices_batch)
+            train_batch_feat_rec_loss = rec_criterion(input=feat_matrices_recon, target=feat_matrices_batch_embedded)
 
             # compute adjacency matrix loss
             train_batch_adj_rec_loss = rec_criterion(input=adj_matrices_recon, target=adj_matrices_batch)
 
-            # compute kl-divergence loss
-            # train_batch_kl_div_loss = parameter['kl_div_alpha'] * (-0.5 * th.sum(1 + sigma - mu.pow(2) - sigma.exp()))
-
             # compute train batch loss
-            train_batch_loss = train_batch_feat_rec_loss + train_batch_adj_rec_loss
+            train_batch_loss = parameter['beta'] * train_batch_feat_rec_loss + (1.0 - parameter['beta']) * train_batch_adj_rec_loss
 
             # compute and collect average reconstruction loss
-            experiment_statistics['average_train_loss'] += train_batch_loss.cpu().detach().item()
-            experiment_statistics['average_adj_train_loss'] += train_batch_adj_rec_loss.cpu().detach().item()
-            experiment_statistics['average_fea_train_loss'] += train_batch_feat_rec_loss.cpu().detach().item()
+            average_train_loss += train_batch_loss.cpu().detach().item()
+            average_adj_train_loss += train_batch_adj_rec_loss.cpu().detach().item()
+            average_fea_train_loss += train_batch_feat_rec_loss.cpu().detach().item()
 
             # log training progress
             now = dt.datetime.utcnow().strftime('%m/%d/%Y %H:%M:%S')
@@ -319,42 +314,71 @@ class GraphAutoencoderExperiment(object):
             # run optimizer step
             optimizer.step()
 
+            # update learning rate
+            scheduler.step()
+
+            # determine finale average losses per iteration
+            experiment_statistics['average_train_loss'] = average_train_loss / (i + 1)
+            experiment_statistics['average_adj_train_loss'] = average_adj_train_loss / (i + 1)
+            experiment_statistics['average_fea_train_loss'] = average_fea_train_loss / (i + 1)
+
             # case: wandb logging enabled
             if parameter['wandb']:
 
                 # fill wandb log dict
-                wandb_logging['001_model_training/avg_train_loss'] = experiment_statistics['average_train_loss'] / (i + 1)
-                wandb_logging['001_model_training/avg_adj_train_loss'] = experiment_statistics['average_adj_train_loss'] / (i + 1)
-                wandb_logging['001_model_training/avg_fea_train_loss'] = experiment_statistics['average_fea_train_loss'] / (i + 1)
+                self.wandb_logging['001_model_training/avg_train_loss'] = average_train_loss / (i + 1)
+                self.wandb_logging['001_model_training/avg_adj_train_loss'] = average_adj_train_loss / (i + 1)
+                self.wandb_logging['001_model_training/avg_fea_train_loss'] = average_fea_train_loss / (i + 1)
 
                 # log training progress
-                run.log(wandb_logging)
+                self.wandb_run.log(self.wandb_logging)
 
             # case: eval iteration
-            if i % parameter['eval_iteration'] == 0:
+            if (i % parameter['eval_iteration'] == 0) and (i > 0):
+
+                # run model evaluation
+                aggregated_entries, experiment_statistics = self.run_model_validation(parameter, experiment_statistics, model, rec_criterion, rec_criterion_details, eval_loader, aggregated_entries)
+
+                # determine current learning rate
+                experiment_statistics['learning_rate'] = optimizer.state_dict()['param_groups'][0]['lr']
+
+                # run anomaly detection routine
+                selected_aggregated_entries, global_anomalies, local_anomalies = self.run_anomaly_detection(parameter, aggregated_entries)
+
+                # determine number of clusters
+                experiment_statistics['no_clusters'] = int(len(selected_aggregated_entries['Y_ANOMALY_CLASS'].unique())-2)
+
+                # determine number of global and local anomalies
+                experiment_statistics['no_global_anomalies'] = int(global_anomalies.shape[0])
+                experiment_statistics['no_local_anomalies'] = int(local_anomalies.shape[0])
+
+                # log experiment results
+                file_name = '{}_experiment_log_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
+                experiment_log = self.save_experiment_log(parameter=parameter, experiment_statistics=experiment_statistics, experiment_log=experiment_log, file_name=file_name)
+
+                # set visualization handler directory
+                self.vha.set_plot_dir(plot_dir=parameter['vis_sub_dir'])
+
+                # run the result visualization
+                self.run_model_visualization(parameter=parameter, data_statistics=data_statistics, experiment_statistics=experiment_statistics, data=selected_aggregated_entries, average_train_loss=experiment_statistics['average_train_loss'], average_valid_loss=experiment_statistics['average_valid_loss'], iteration=i)
 
                 # save client model checkpoint
                 file_name = '{}_ae_gnn_model_checkpoint_itr_{}.pth'.format(parameter['exp_timestamp'], str(i).zfill(6))
-                self.uha.save_client_model_checkpoint(filename=file_name, iteration=i, model=model, optimizer=optimizer, chpt_dir=parameter['log_sub_dir'])
-
-        # determine finale average losses per iteration
-        experiment_statistics['average_train_loss'] /= parameter['iterations']
-        experiment_statistics['average_adj_train_loss'] /= parameter['iterations']
-        experiment_statistics['average_fea_train_loss'] /= parameter['iterations']
+                # self.uha.save_client_model_checkpoint(filename=file_name, iteration=i, model=model, optimizer=optimizer, chpt_dir=parameter['log_sub_dir'])
 
         # return model training results
-        return model, experiment_statistics
+        return model, experiment_statistics, experiment_log
 
     # run the model evaluation
-    def run_model_validation(self, parameter, experiment_statistics, model, rec_criterion, rec_criterion_details, eval_loader, aggregated_entries, run, wandb_logging):
+    def run_model_validation(self, parameter, experiment_statistics, model, rec_criterion, rec_criterion_details, eval_loader, aggregated_entries):
 
         # set model in evaluation mode
         model.eval()
 
         # init validation reconstruction losses
-        experiment_statistics['average_valid_loss'] = 0.0
-        experiment_statistics['average_adj_valid_loss'] = 0.0
-        experiment_statistics['average_fea_valid_loss'] = 0.0
+        average_valid_loss = 0.0
+        average_adj_valid_loss = 0.0
+        average_fea_valid_loss = 0.0
 
         # init detailed validation reconstruction losses
         valid_losses = []
@@ -365,97 +389,90 @@ class GraphAutoencoderExperiment(object):
         # init and wrap range of training iterations
         validation_iterations = tqdm(total=len(eval_loader))
 
-        # case: mini-batches are still available
-        for i, (adj_matrices_batch, feat_matrices_batch) in enumerate(eval_loader):
+        # disable gradient computation
+        with th.no_grad():
 
-            # push the inputs to compute device
-            adj_matrices_batch = adj_matrices_batch.to(parameter['device'])
-            feat_matrices_batch = feat_matrices_batch.to(parameter['device'])
+            # case: mini-batches are still available
+            for i, (adj_matrices_batch, feat_matrices_batch) in enumerate(eval_loader):
 
-            # clamp reconstructed matrix
-            # adj_matrices_batch = th.clamp(adj_matrices_batch, min=0.0, max=1.0)
+                # push the inputs to compute device
+                adj_matrices_batch = adj_matrices_batch.to(parameter['device'])
+                feat_matrices_batch = feat_matrices_batch.to(parameter['device'])
 
-            # run model forward pass
-            valid_embeddings_batch, _, _, feat_matrices_recon, adj_matrices_recon = model(feat_matrices_batch, adj_matrices_batch)
+                # determine feature embeddings
+                feat_matrices_batch = model.embedd_features_batch(feat_matrices_batch)
 
-            ### compute batch reconstruction loss
+                # run model forward pass
+                valid_embeddings_batch, _, _, feat_matrices_recon, adj_matrices_recon = model(feat_matrices_batch, adj_matrices_batch)
 
-            # compute feature vector loss
-            valid_batch_feat_rec_loss = rec_criterion(input=feat_matrices_recon, target=feat_matrices_batch)
+                ### compute batch reconstruction loss
 
-            # compute adjacency matrix loss
-            valid_batch_adj_rec_loss = rec_criterion(input=adj_matrices_recon, target=adj_matrices_batch)
+                # compute feature vector loss
+                valid_batch_feat_rec_loss = rec_criterion(input=feat_matrices_recon, target=feat_matrices_batch)
 
-            # compute and add adjacency and feature reconstruction loss
-            valid_batch_loss = valid_batch_feat_rec_loss.cpu().detach().item() + valid_batch_adj_rec_loss.cpu().detach().item()
+                # compute adjacency matrix loss
+                valid_batch_adj_rec_loss = rec_criterion(input=adj_matrices_recon, target=adj_matrices_batch)
 
-            experiment_statistics['average_valid_loss'] += valid_batch_loss
-            experiment_statistics['average_adj_valid_loss'] += valid_batch_adj_rec_loss.cpu().detach().item()
-            experiment_statistics['average_fea_valid_loss'] += valid_batch_feat_rec_loss.cpu().detach().item()
+                # compute and add adjacency and feature reconstruction loss
+                valid_batch_loss = valid_batch_feat_rec_loss.cpu().detach().item() + valid_batch_adj_rec_loss.cpu().detach().item()
 
-            ### compute detailed reconstruction losses
+                # collect average validation losses
+                average_valid_loss += valid_batch_loss
+                average_adj_valid_loss += valid_batch_adj_rec_loss.cpu().detach().item()
+                average_fea_valid_loss += valid_batch_feat_rec_loss.cpu().detach().item()
 
-            # compute and add categorical reconstruction loss
-            valid_batch_feat_rec_loss_details = rec_criterion_details(input=feat_matrices_recon, target=feat_matrices_batch).mean(axis=1).mean(axis=1)
+                ### compute detailed reconstruction losses
 
-            # compute and add categorical reconstruction loss
-            valid_batch_adj_rec_loss_details = rec_criterion_details(input=adj_matrices_recon, target=adj_matrices_batch).mean(axis=1).mean(axis=1)
+                # compute and add categorical reconstruction loss
+                valid_batch_feat_rec_loss_details = rec_criterion_details(input=feat_matrices_recon, target=feat_matrices_batch).mean(axis=1).mean(axis=1)
 
-            # compute and add adjacency and feature reconstruction loss
-            valid_batch_loss_details = valid_batch_feat_rec_loss_details + valid_batch_adj_rec_loss_details
+                # compute and add categorical reconstruction loss
+                valid_batch_adj_rec_loss_details = rec_criterion_details(input=adj_matrices_recon, target=adj_matrices_batch).mean(axis=1).mean(axis=1)
 
-            # log validation progress
-            now = dt.datetime.utcnow().strftime('%m/%d/%Y %H:%M:%S')
-            validation_iterations.set_description(
-                (
-                    '[INFO {}] DeepAppleGraph :: iteration: {}, valid-loss: {}, valid-feat-loss: {}, valid-adj-loss: {}'.format(str(now), str(i).zfill(2), str(np.round(valid_batch_loss, 6)), str(np.round(valid_batch_feat_rec_loss.cpu().detach().item(), 6)), str(np.round(valid_batch_adj_rec_loss.cpu().detach().item(), 6)))
+                # compute and add adjacency and feature reconstruction loss
+                valid_batch_loss_details = valid_batch_feat_rec_loss_details + valid_batch_adj_rec_loss_details
+
+                # log validation progress
+                now = dt.datetime.utcnow().strftime('%m/%d/%Y %H:%M:%S')
+                validation_iterations.set_description(
+                    (
+                        '[INFO {}] DeepAppleGraph :: iteration: {}, valid-loss: {}, valid-feat-loss: {}, valid-adj-loss: {}'.format(str(now), str(i).zfill(2), str(np.round(valid_batch_loss / (i + 1), 6)), str(np.round(average_fea_valid_loss / (i + 1), 6)), str(np.round(average_adj_valid_loss / (i + 1), 6)))
+                    )
                 )
-            )
 
-            # case: initial batch
-            if i == 0:
+                # case: initial batch
+                if i == 0:
 
-                # collect validation losses
-                valid_losses = valid_batch_loss_details.cpu().detach().numpy()
+                    # collect validation losses
+                    valid_losses = valid_batch_loss_details.cpu().detach().numpy()
 
-                # collect validation embeddings
-                valid_embeddings = valid_embeddings_batch.cpu().detach().numpy()
+                    # collect validation embeddings
+                    valid_embeddings = valid_embeddings_batch.cpu().detach().numpy()
 
-            # case: non-initial batch
-            else:
+                # case: non-initial batch
+                else:
 
-                # collect validation losses
-                valid_losses = np.hstack((valid_losses, valid_batch_loss_details.cpu().detach().numpy()))
+                    # collect validation losses
+                    valid_losses = np.hstack((valid_losses, valid_batch_loss_details.cpu().detach().numpy()))
 
-                # collect validation embeddings
-                valid_embeddings = np.vstack((valid_embeddings, valid_embeddings_batch.cpu().detach().numpy()))
+                    # collect validation embeddings
+                    valid_embeddings = np.vstack((valid_embeddings, valid_embeddings_batch.cpu().detach().numpy()))
 
-            # case: wandb logging enabled
-            if parameter['wandb']:
+                # update iterations
+                validation_iterations.update(1)
 
-                # fill wandb log dict
-                wandb_logging['001_model_training/avg_valid_loss'] = experiment_statistics['average_valid_loss'] / (i + 1)
-                wandb_logging['001_model_training/avg_adj_valid_loss'] = experiment_statistics['average_adj_valid_loss'] / (i + 1)
-                wandb_logging['001_model_training/avg_fea_valid_loss'] = experiment_statistics['average_fea_valid_loss'] / (i + 1)
-
-                # log training progress
-                run.log(wandb_logging)
-
-            # update validation iterations
-            validation_iterations.update(1)
+        # close iterations
+        validation_iterations.close()
 
         # update journal entries with embedding
         aggregated_entries['Y_REC_ERROR'] = valid_losses
         aggregated_entries['z1'] = valid_embeddings[:, 0]
         aggregated_entries['z2'] = valid_embeddings[:, 1]
 
-        # close validation iteration
-        validation_iterations.close()
-
-        # determine final average losses per iteration
-        experiment_statistics['average_valid_loss'] /= parameter['iterations']
-        experiment_statistics['average_adj_valid_loss'] /= parameter['iterations']
-        experiment_statistics['average_fea_valid_loss'] /= parameter['iterations']
+        # determine final average batch validation losses
+        experiment_statistics['average_valid_loss'] = average_valid_loss / (i + 1)
+        experiment_statistics['average_adj_valid_loss'] = average_adj_valid_loss / (i + 1)
+        experiment_statistics['average_fea_valid_loss'] = average_fea_valid_loss / (i + 1)
 
         # return model evaluation results
         return aggregated_entries, experiment_statistics
@@ -502,8 +519,17 @@ class GraphAutoencoderExperiment(object):
         # case: isolation hdbscan anomaly detection
         elif parameter['algo'] == 'hdbscan':
 
-            # init the hdbscan model
-            hdbscan_model = hdbscan.HDBSCAN(min_cluster_size=parameter['min_cluster_size'], min_samples=parameter['min_samples'])
+            # grid search best hdbscan parameters
+            best_parameters = self.grid_search_hdbscan_parameter(parameter=parameter, aggregated_entries=aggregated_entries)
+
+            # update experiment parameter
+            parameter['min_cluster_size'] = best_parameters['min_cluster_size']
+            parameter['min_samples'] = best_parameters['min_samples']
+            parameter['metric'] = best_parameters['metric']
+            parameter['cluster_selection_method'] = best_parameters['cluster_selection_method']
+
+            # init the hdbscan model with grid searched parameters
+            hdbscan_model = hdbscan.HDBSCAN(min_cluster_size=parameter['min_cluster_size'], min_samples=parameter['min_samples'], metric=parameter['metric'], cluster_selection_method=parameter['cluster_selection_method'])
 
             # determine hdbscan clustering prediction
             predictions = hdbscan_model.fit_predict(aggregated_entries[['z1', 'z2']])
@@ -527,15 +553,16 @@ class GraphAutoencoderExperiment(object):
             # determine anomaly detection prediction
             predictions[np.where((scores >= anomaly_threshold) & (predictions != -1))[0]] = -2
 
-        # determine the anomaly score mean and standard deviation
-        # scores_mean = scores.mean()
-        # scores_std = scores.std()
-
         # collect local outlier factor anomaly prediction results
         aggregated_entries['Y_ANOMALY_CLASS'] = predictions
 
         # collect local outlier factor anomaly scores results
         aggregated_entries['Y_ANOMALY_SCORE'] = scores
+
+        # collect local outlier factor anomaly prediction results
+        aggregated_entries['Y_ANOMALY_LABEL'] = 'Regular'
+        aggregated_entries['Y_ANOMALY_LABEL'] = np.where(aggregated_entries['Y_ANOMALY_CLASS'] == -1, 'Global Anomaly', aggregated_entries['Y_ANOMALY_LABEL'])
+        aggregated_entries['Y_ANOMALY_LABEL'] = np.where(aggregated_entries['Y_ANOMALY_CLASS'] == -2, 'Local Anomaly', aggregated_entries['Y_ANOMALY_LABEL'])
 
         # determine global anomalies
         global_anomalies = aggregated_entries[aggregated_entries['Y_ANOMALY_CLASS'] == -1]
@@ -546,30 +573,113 @@ class GraphAutoencoderExperiment(object):
         # return anomaly detection results
         return aggregated_entries, global_anomalies, local_anomalies
 
+    def grid_search_hdbscan_parameter(self, parameter, aggregated_entries):
+
+        # init the hdbscan model
+        hdb = hdbscan.HDBSCAN(gen_min_span_tree=True).fit(aggregated_entries[['z1', 'z2']])
+
+        # specify the grid hdbscan grid search paramters
+        param_dist = {'min_samples': [5, 10, 30, 50, 60, 100],
+                      'min_cluster_size': [10, 50, 100, 200, 300, 400, 500, 600],
+                      'cluster_selection_method': ['eom', 'leaf'],
+                      'metric': ['euclidean', 'manhattan']
+                      }
+
+        # init grid search optimization criterion
+        validity_scorer = make_scorer(hdbscan.validity.validity_index, greater_is_better=True)
+
+        # init hdbscan parameter grid search
+        random_search = RandomizedSearchCV(hdb, param_distributions=param_dist, n_iter=20, scoring=validity_scorer, random_state=parameter['seed'], verbose=2)
+
+        # run hdbscan parameter grid search
+        random_search.fit(aggregated_entries[['z1', 'z2']])
+
+        # get hdbscan parameters
+        best_parameters = random_search.best_params_
+
+        # return best parameters
+        return best_parameters
+
+    # save experiment statistics
+    def save_experiment_log(self, parameter, experiment_statistics, experiment_log, file_name):
+
+        # collect experiment statistics
+        exp_stats = {
+            'timestamp': str(dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S'))
+            , 'seed': parameter['seed']
+            , 'iterations': parameter['iterations']
+            , 'batch_size': parameter['train_batch_size']
+            , 'learning_rate_start': parameter['learning_rate']
+            , 'learning_rate_iteration': experiment_statistics['learning_rate']
+            , 'beta': parameter['beta']
+            , 'encoder_dim': parameter['encoder_dim']
+            , 'decoder_dim': parameter['decoder_dim']
+            , 'embed_dim': parameter['embed_dim']
+            , 'bottleneck': parameter['bottleneck']
+            , 'no_accounts': int(experiment_statistics['no_accounts'])
+            , 'feat_embed_dim': parameter['feat_embed_dim']
+            , 'no_features': int(experiment_statistics['no_features'])
+            , 'train_loss': np.round(experiment_statistics['average_train_loss'], 6)
+            , 'train_adj_loss': np.round(experiment_statistics['average_adj_train_loss'], 6)
+            , 'train_fea_loss': np.round(experiment_statistics['average_fea_train_loss'], 6)
+            , 'valid_loss': np.round(experiment_statistics['average_valid_loss'], 6)
+            , 'valid_adj_loss': np.round(experiment_statistics['average_adj_valid_loss'], 6)
+            , 'valid_fea_loss': np.round(experiment_statistics['average_fea_valid_loss'], 6)
+            , 'algo': parameter['algo']
+            , 'min_cluster_size': parameter['min_cluster_size']
+            , 'min_samples': parameter['min_samples']
+            , 'metric': parameter['metric']
+            , 'no_clusters': int(experiment_statistics['no_clusters'])
+            , 'no_global_anomalies': int(experiment_statistics['no_global_anomalies'])
+            , 'no_local_anomalies': int(experiment_statistics['no_local_anomalies'])
+        }
+
+        # determine and collect training summary statistics of current epoch
+        experiment_log = experiment_log.append(exp_stats, ignore_index=True)
+
+        # save current experiment statistics
+        experiment_log.to_csv(os.path.join(parameter['sta_sub_dir'], file_name), sep=',', encoding='utf-8')
+
+        # return update experiment log
+        return experiment_log
+
     # run the model and result visualization
-    def run_model_visualization(self, parameter, statistics, data, average_train_loss, average_valid_loss):
+    def run_model_visualization(self, parameter, data_statistics, experiment_statistics, data, average_train_loss, average_valid_loss, iteration):
 
         # visualize learned embeddings
-        filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}.png'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
-        title = 'GNN Autoencoder - Journal Entry Embedding Distribution\niterations: {}, avg-train-loss: {}, avg-valid-loss: {}'.format(str(parameter['iterations']).zfill(6), str(np.round((average_train_loss / parameter['iterations']), 6)), str(np.round((average_valid_loss / parameter['iterations']), 6)))
+        filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}.png'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
+        title = 'GNN Autoencoder - Journal Entry Embedding Distribution\niterations: {}, avg-train-loss: {}, avg-valid-loss: {}'.format(str(iteration).zfill(6), str(np.round((average_train_loss / iteration), 6)), str(np.round((average_valid_loss / iteration), 6)))
         self.vha.plot_embeddings_2d(data=data, z1_col_name='z1', z2_col_name='z2', filename=filename, title=title)
 
         # visualize learned embeddings in specific interval
-        filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_interval.png'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
-        title = 'GNN Autoencoder - Journal Entry Embedding Distribution\niterations: {}, avg-train-loss: {}, avg-valid-loss: {}'.format(str(parameter['iterations']).zfill(6), str(np.round((average_train_loss / parameter['iterations']), 6)), str(np.round((average_valid_loss / parameter['iterations']), 6)))
-        self.vha.plot_embeddings_2d_interval(data=data, z1_col_name='z1', z2_col_name='z2', c_col_name='Y_REC_ERROR', filename=filename, title=title, xlim=[-5.0, 5.0], ylim=[-5.0, 5.0]) # xlim=[18.5, 20.1], ylim=[-10.2, -11.5]
+        #filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_interval.png'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
+        #title = 'GNN Autoencoder - Journal Entry Embedding Distribution\niterations: {}, avg-train-loss: {}, avg-valid-loss: {}'.format(str(iteration).zfill(6), str(np.round((average_train_loss / iteration), 6)), str(np.round((average_valid_loss / iteration), 6)))
+        #self.vha.plot_embeddings_2d_interval(data=data, z1_col_name='z1', z2_col_name='z2', c_col_name='Y_REC_ERROR', filename=filename, title=title, xlim=[-5.0, 5.0], ylim=[-5.0, 5.0]) # xlim=[18.5, 20.1], ylim=[-10.2, -11.5]
+
+        # case: visualize ey dataset
+        if parameter['dataset'] == 'ey':
+
+            # visualize learned embeddings interactively -> Todo Fix
+            filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
+            title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}'.format(str(parameter['dataset']).upper(), str(iteration).zfill(6), str(np.round((average_train_loss / iteration), 6)), str(np.round((average_valid_loss / iteration), 6)))
+            # self.vha.plot_embeddings_2d_interactive(data=data, hover=data_statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name='Y_REC_ERROR', filename=filename, title=title)
+            self.vha.plot_ey_embeddings_2d_interactive(data=data, attributes=data_statistics['visual_attributes'], hover=data_statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name='Y_REC_ERROR', filename=filename, title=title)
+
+        # case: visualize sap dataset
+        elif parameter['dataset'] == 'sap':
+
+            # visualize learned embeddings interactively -> Todo Fix
+            filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
+            title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}'.format(str(parameter['dataset']).upper(), str(iteration).zfill(6), str(np.round((average_train_loss / iteration), 6)), str(np.round((average_valid_loss / iteration), 6)))
+            # self.vha.plot_embeddings_2d_interactive(data=data, hover=data_statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name='Y_REC_ERROR', filename=filename, title=title)
+            self.vha.plot_sap_embeddings_2d_interactive(data=data, attributes=data_statistics['visual_attributes'], hover=data_statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name='Y_REC_ERROR', filename=filename, title=title)
 
         # visualize learned embeddings interactively
-        filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
-        title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}'.format(str(parameter['dataset']).upper(), str(parameter['iterations']).zfill(6), str(np.round((average_train_loss / parameter['iterations']), 6)), str(np.round((average_valid_loss / parameter['iterations']), 6)))
-        self.vha.plot_embeddings_2d_interactive(data=data, hover=statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name='Y_REC_ERROR', filename=filename, title=title)
+        filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_anomalies_score_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
+        title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}<br>Anomaly-Algorithm: {}, Clusters: {}, Global-Anomalies: {}, Local-Anomalies: {}'.format(str(parameter['dataset']).upper(), str(iteration).zfill(6), str(np.round((average_train_loss / iteration), 6)), str(np.round((average_valid_loss / iteration), 6)), str(parameter['algo']).upper(), str(experiment_statistics['no_clusters']), str(experiment_statistics['no_global_anomalies']), str(experiment_statistics['no_local_anomalies']))
+        self.vha.plot_embeddings_2d_anomalies_score_interactive(data=data, hover=data_statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name='Y_ANOMALY_SCORE', filename=filename, title=title)
 
         # visualize learned embeddings interactively
-        filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_anomalies_score_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
-        title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}<br>Anomaly-Algorithm: {}, Global-Anomalies: {}, Local-Anomalies: {}'.format(str(parameter['dataset']).upper(), str(parameter['iterations']).zfill(6), str(np.round((average_train_loss / parameter['iterations']), 6)), str(np.round((average_valid_loss / parameter['iterations']), 6)), str(parameter['algo']).upper(), str(data[data['Y_ANOMALY_CLASS'] == -1].shape[0]), str(data[data['Y_ANOMALY_CLASS'] == -2].shape[0]))
-        self.vha.plot_embeddings_2d_anomalies_score_interactive(data=data, hover=statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name='Y_ANOMALY_SCORE', filename=filename, title=title)
-
-        # visualize learned embeddings interactively
-        filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_anomalies_cluster_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
-        title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}<br>Anomaly-Algorithm: {}, Global-Anomalies: {}, Local-Anomalies: {}'.format(str(parameter['dataset']).upper(), str(parameter['iterations']).zfill(6), str(np.round((average_train_loss / parameter['iterations']), 6)), str(np.round((average_valid_loss / parameter['iterations']), 6)), str(parameter['algo']).upper(), str(data[data['Y_ANOMALY_CLASS'] == -1].shape[0]), str(data[data['Y_ANOMALY_CLASS'] == -2].shape[0]))
-        self.vha.plot_embeddings_2d_anomalies_cluster_interactive(data=data, hover=statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name='Y_ANOMALY_CLASS', filename=filename, title=title)
+        #filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_anomalies_cluster_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
+        #title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}<br>Anomaly-Algorithm: {}, Global-Anomalies: {}, Local-Anomalies: {}'.format(str(parameter['dataset']).upper(), str(iteration).zfill(6), str(np.round((average_train_loss / iteration), 6)), str(np.round((average_valid_loss / iteration), 6)), str(parameter['algo']).upper(), str(data[data['Y_ANOMALY_CLASS'] == -1].shape[0]), str(data[data['Y_ANOMALY_CLASS'] == -2].shape[0]))
+        #self.vha.plot_embeddings_2d_anomalies_cluster_interactive(data=data, hover=data_statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name='Y_ANOMALY_CLASS', filename=filename, title=title)
