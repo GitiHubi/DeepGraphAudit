@@ -10,16 +10,19 @@ import ModelHandler.GNNDecoder as GNNDecoder
 class GNNAutoencoder(nn.Module):
 
     # define class constructor
-    def __init__(self, encoder_dim, bottleneck, decoder_dim, bias=True, device='cpu'):
+    def __init__(self, statistics, feat_embed_dim, encoder_dim, bottleneck, decoder_dim, bias=True, device='cpu'):
 
         # call super class constructor
         super(GNNAutoencoder, self).__init__()
 
-        # init graph VAE embedding model
-        # self.embedder = nn.Embedding(token_no, data_dim)
+        # init dataset statistics
+        self.statistics = statistics
 
-        # init graph VAE embedding model parameters
-        #nn.init.xavier_uniform_(self.embedder.weight)
+        # init VAE feature embedding layers
+        self.feat_embeddings = self.init_embedding_layers(feat_embed_dim)
+
+        # init VAE feature embeddin non-linearity
+        self.feat_sigmoid = nn.Sigmoid()
 
         # init graph VAE encoder model
         self.encoder = GNNEncoder.GNNEncoder(encoder_dim, bottleneck, bias)
@@ -32,9 +35,6 @@ class GNNAutoencoder(nn.Module):
 
     # define graph VAE forward pass
     def forward(self, feat_matrices, adj_matrices):
-
-        # run embedding forward pass
-        # feat_matrices = self.embedder(feat_matrices)
 
         # run encoder forward pass
         z, mu, sigma = self.encoder(feat_matrices, adj_matrices)
@@ -59,6 +59,113 @@ class GNNAutoencoder(nn.Module):
 
         # return reconstructed features and adjacency matrix
         return z, mu, sigma, rec_feat_matrices, rec_adj_matrices
+
+    def init_embedding_layers(self, embedding_dim):
+
+        # init embedding layers
+        embedding_layers = []
+
+        # iterate over je features
+        for i, feature in enumerate(self.statistics['je_features']):
+
+            # case: je header feature
+            if feature in self.statistics['je_header_features']:
+
+                # init categorical embedding layer
+                feature_embedding_layer = self.init_feature_layer_categorical(i, feature, embedding_dim)
+
+            # case: je segment categorial feature
+            elif feature in self.statistics['je_segment_features_categorical']:
+
+                # init categorical embedding layer
+                feature_embedding_layer = self.init_feature_layer_categorical(i, feature, embedding_dim)
+
+            # case: je segment numerical feature
+            elif feature in self.statistics['je_segment_features_numerical']:
+
+                # init numerical embedding layer
+                feature_embedding_layer = self.init_feature_layer_numerical(i, feature, embedding_dim)
+
+            # collect embedding layer
+            embedding_layers.append(feature_embedding_layer)
+
+        # return the embedding layers
+        return embedding_layers
+
+    def init_feature_layer_categorical(self, count, feature, embedding_dim):
+
+        # determine attribute dimensionality
+        attribute_dim = self.statistics['{}_dim'.format(feature)]
+
+        # init categorical embedding layer
+        feature_embedding_layer = nn.Embedding(attribute_dim, embedding_dim).double()
+
+        # register categorical embedding layer
+        self.add_module('embedding_cat_{}_{}'.format(str(count), str(feature)), feature_embedding_layer)
+
+        # init embedding layer parameters
+        nn.init.xavier_uniform_(feature_embedding_layer.weight)
+
+        # return categorical feature embedding layers
+        return feature_embedding_layer
+
+    def init_feature_layer_numerical(self, count, feature, embedding_dim):
+
+        # init numerical embedding layer
+        feature_embedding_layer = nn.Linear(1, embedding_dim).double()
+
+        # register numerical embedding layer
+        self.add_module('embedding_num_{}_{}'.format(str(count), str(feature)), feature_embedding_layer)
+
+        # init embedding layer parameters
+        nn.init.xavier_uniform_(feature_embedding_layer.weight)
+
+        # return numerical feature embedding layers
+        return feature_embedding_layer
+
+    def embedd_features_batch(self, feat_matrices):
+
+        # iterate over je features
+        for i, feature in enumerate(self.statistics['je_features']):
+
+            # case: je header feature
+            if feature in self.statistics['je_header_features']:
+
+                # determine values of current feature
+                feat_matrices_values = feat_matrices[:, :, i].type(torch.LongTensor).to(self.device)
+
+            # case: je segment categorial feature
+            elif feature in self.statistics['je_segment_features_categorical']:
+
+                # determine values of current feature
+                feat_matrices_values = feat_matrices[:, :, i].type(torch.LongTensor).to(self.device)
+
+            # case: je segment numerical feature
+            elif feature in self.statistics['je_segment_features_numerical']:
+
+                # determine values of current feature
+                feat_matrices_values = feat_matrices[:, :, i].unsqueeze(2).to(self.device)
+
+            # determine linear embedding of current feature
+            feat_matrices_embedding = self.feat_embeddings[i](feat_matrices_values)
+
+            # determine non-linear embedding of current feature
+            feat_matrices_embedding = self.feat_sigmoid(feat_matrices_embedding)
+
+            # case: initial feature
+            if i == 0:
+
+                # determine embedded features
+                feat_matrices_embeddings = feat_matrices_embedding
+
+            # case: non-initial dimension
+            else:
+
+                # determine embedded features
+                feat_matrices_embeddings = torch.cat((feat_matrices_embeddings, feat_matrices_embedding), dim=2)
+
+        # return embedded features
+        return feat_matrices_embeddings
 
     # reformat feat matrices
     def reconstruct_feat_matrices(self, feat_matrices, rec_feat_matrices, xdim, ydim):
