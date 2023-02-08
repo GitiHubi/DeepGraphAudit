@@ -62,7 +62,6 @@ class GNNEncoder(nn.Module):
 
             self.bottleneck = nn.Identity()
 
-
         # case: leaky relu bottleneck
         elif bottleneck == 'lrelu':
 
