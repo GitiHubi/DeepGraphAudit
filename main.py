@@ -37,35 +37,42 @@ def main():
     parser.add_argument('-exp_postfix', type=str, default='poc', help='postfix of experimental runs.')
 
     # data parameter
-    parser.add_argument('-dataset', help='', nargs='?', type=str,  default='ey') # ey, serpro, sap
+    parser.add_argument('-dataset', help='', nargs='?', type=str,  default='sap') # ey, serpro, sap
     parser.add_argument('-sample_eval', help='', nargs='?', type=str, default='False')
     parser.add_argument('-sample_size', help='', nargs='?', type=int, default=2001)
     parser.add_argument('-min_line_items', help='', nargs='?', type=int, default=2)
-    parser.add_argument('-max_line_items', help='', nargs='?', type=int, default=40)
+    parser.add_argument('-max_line_items', help='', nargs='?', type=int, default=20)
 
     # model architecture parameter
     parser.add_argument('-seed', type=int, default=1111, help='seed value for deterministic results.')
-    # parser.add_argument('-data_dim', type=int, default=10, help='the dimension of the data embeddings.')
-    parser.add_argument('-encoder_dim', nargs='+', default=[64, 32, 16, 8, 4, 2], help='the dimensions of the encoder gnn layers.')
-    parser.add_argument('-decoder_dim', nargs='+', default=[2, 4, 8, 16, 32, 64], help='the dimensions of the decoder fc layers.')
-    #parser.add_argument('-hidden_dim', type=int, default=64, help='the dimension of the first gnn layer.')
-    parser.add_argument('-bottleneck', type=str, default='tanh', help='the bottleneck non-linearity.') # linear, tanh, lrelu
+    parser.add_argument('-encoder_dim', nargs='+', default=[16, 8, 4, 2], help='the dimensions of the encoder gnn layers.') # [128, 64, 32, 16, 8, 4, 2]
+    parser.add_argument('-decoder_dim', nargs='+', default=[2, 4, 8, 16], help='the dimensions of the decoder fc layers.') # [2, 4, 8, 16, 32, 64, 128]
+    parser.add_argument('-encoder_type', type=str, default='embed', help='the type of feature encoding') # onehot, embed
+    parser.add_argument('-bottleneck', type=str, default='linear', help='the bottleneck non-linearity.') # linear, tanh, lrelu
+    parser.add_argument('-feat_embed_dim', type=int, default=8, help='the feature dimension of the graph embeddings.')
     parser.add_argument('-embed_dim', type=int, default=2, help='the dimension of the graph embeddings.')
 
     # model training parameter
     parser.add_argument('-iterations', type=int, default=1001, help='the number of training iterations.')
     parser.add_argument('-eval_iteration', type=int, default=100, help='the eval training iteration.')
-    parser.add_argument('-batch_size', type=int, default=128, help='the batch size.')
-    parser.add_argument('-loss', type=str, default='mse', help='the training and validation loss.')
-    parser.add_argument('-learning_rate', type=float, default=0.0001, help='the learning rate.')
+    parser.add_argument('-train_batch_size', type=int, default=64, help='the training batch size.')
+    parser.add_argument('-loss', type=str, default='mse', help='the training and validation loss.') #mse, bce
+    parser.add_argument('-learning_rate', type=float, default=0.01, help='the learning rate.')
+    parser.add_argument('-learning_rate_steps', type=int, default=4, help='the learning rate steps.')
+    parser.add_argument('-weight_decay', nargs='?', type=float, default=1e-6, help='the optimizer weight decay.')
     parser.add_argument('-kl_div_alpha', type=float, default=0.0, help='the kl-divergence loss regularizer.')
+    parser.add_argument('-beta', type=float, default=0.5, help='the loss regularizer.')
     parser.add_argument('-device', type=str, default='cpu', help='the compute device.')
-    parser.add_argument('-wandb', type=str, default='True', help='enable wandb logging.')
 
-    # model anomaly detection paramter
+    # model evaluation parameter
+    parser.add_argument('-eval_batch_size', type=int, default=512, help='the evaluation batch size.')
+    parser.add_argument('-wandb', type=str, default='False', help='enable wandb logging.')
+
+    # model anomaly detection parameter
     parser.add_argument('-algo', type=str, default='hdbscan', help='the anomaly detection algorithm.') # lof, svm, iforest, hdbscan
-    parser.add_argument('-min_cluster_size', type=int, default=100, help='the hdbscan min cluster size.')
-    parser.add_argument('-min_samples', type=int, default=1, help='the hdbscan min samples.')
+    parser.add_argument('-min_cluster_size', type=int, default=2, help='the hdbscan min cluster size.')
+    parser.add_argument('-min_samples', type=int, default=2, help='the hdbscan min samples.')
+    parser.add_argument('-metric', type=str, default='leaf', help='the hdbscan min samples.')
     parser.add_argument('-kernel', type=str, default='rbf', help='the one-class svm kernel.')
     parser.add_argument('-degree', type=int, default=3, help='the one-class svm degree of the polynomial kernel function.')
     parser.add_argument('-gamma', type=str, default='svm', help='the one-class svm kernel coefficient.')
@@ -76,38 +83,102 @@ def main():
     warnings.filterwarnings('ignore')
 
     # parse client arguments
-    parameter = vars(parser.parse_args())
+    experiment_parameter = vars(parser.parse_args())
 
     # init new handlers
     uha = UtilsHandler.UtilsHandler()
 
     # parse boolean args as boolean
-    parameter['sample_eval'] = uha.str2bool(parameter['sample_eval'])
-    parameter['wandb'] = uha.str2bool(parameter['wandb'])
+    experiment_parameter['sample_eval'] = uha.str2bool(experiment_parameter['sample_eval'])
+    experiment_parameter['wandb'] = uha.str2bool(experiment_parameter['wandb'])
 
     # parse integer array args as integer
-    parameter['encoder_dim'] = [int(ele) for ele in parameter['encoder_dim']]
-    parameter['decoder_dim'] = [int(ele) for ele in parameter['decoder_dim']]
+    experiment_parameter['encoder_dim'] = [int(ele) for ele in experiment_parameter['encoder_dim']]
+    experiment_parameter['decoder_dim'] = [int(ele) for ele in experiment_parameter['decoder_dim']]
 
     # set deterministic seeds of the client training experiments
-    np.random.seed(int(parameter['seed']))  # set numpy seed
-    th.manual_seed(int(parameter['seed']))  # set pytorch seed CPU
-    th.cuda.manual_seed(int(parameter['seed']))  # set pytorch seed GPU
+    np.random.seed(int(experiment_parameter['seed']))  # set numpy seed
+    th.manual_seed(int(experiment_parameter['seed']))  # set pytorch seed CPU
+    th.cuda.manual_seed(int(experiment_parameter['seed']))  # set pytorch seed GPU
 
     # case: autoencoder experiment
-    if parameter['experiment'] == 'autoencoder':
+    if experiment_parameter['experiment'] == 'autoencoder':
 
         # todo: implement experiment
         pass
 
     # case: graph autoencoder experiment
-    elif parameter['experiment'] == 'graph_autoencoder':
+    elif experiment_parameter['experiment'] == 'graph_autoencoder':
+
+        # case: ey dataset
+        if experiment_parameter['dataset'] == 'ey':
+
+            # init dataset statistics
+            data_parameter = dict()
+
+            # collect dataset statistics
+            data_parameter['dataset'] = experiment_parameter['dataset']
+
+            # set dataset parameter
+            data_parameter['je_identifier_field'] = 'Y_JE_IDENTIFIER'
+            data_parameter['je_line_item_field'] = 'Y_JE_ITEM_IDENTIFIER'
+            data_parameter['je_gl_account_field'] = 'Y_GL_ACCOUNT_NUMBER'
+            data_parameter['je_debit_credit_field'] = 'Y_DEBIT_CREDIT'
+
+            # set journal entry attribute information
+            data_parameter['je_header_attributes'] = ['JEIdentifier', 'Source', 'PreparerID']
+            data_parameter['je_segment_attributes_categorical'] = ['AccountType', 'AccountClass', 'GLAccountNumber', 'GLAccountName']
+            data_parameter['je_segment_attributes_numerical'] = ['Amount']
+            data_parameter['je_attributes'] = data_parameter['je_header_attributes'] + data_parameter['je_segment_attributes_categorical'] + data_parameter['je_segment_attributes_numerical']
+
+            # set journal entry feature information
+            data_parameter['je_header_features'] = ['Y_SOURCE', 'Y_PREPARER_ID']
+            data_parameter['je_segment_features_categorical'] = ['Y_JE_ITEM_IDENTIFIER', 'Y_DEBIT_CREDIT', 'Y_GL_ACCOUNT_TYPE', 'Y_GL_ACCOUNT_CLASS', 'Y_GL_ACCOUNT_NUMBER', 'Y_GL_ACCOUNT_NAME']  # Y_JE_ITEM_IDENTIFIER and Y_DEBIT_CREDIT are derived features.
+            data_parameter['je_segment_features_numerical'] = ['Y_DMBTR']
+            data_parameter['je_features'] = data_parameter['je_header_features'] + data_parameter['je_segment_features_categorical'] + data_parameter['je_segment_features_numerical']
+            data_parameter['je_segment_features'] = data_parameter['je_segment_features_categorical'] + data_parameter['je_segment_features_numerical']
+
+            # set the visualization features
+            data_parameter['hover_attributes'] = ['Y_JE_IDENTIFIER', 'Y_JE_ITEM_IDENTIFIER', 'Y_GL_ACCOUNT_TYPE', 'Y_GL_ACCOUNT_CLASS', 'Y_GL_ACCOUNT_NAME', 'Y_PREPARER_ID', 'Y_SOURCE', 'Y_DMBTR']
+            data_parameter['visual_attributes'] = ['Y_BUZEI', 'Y_PREPARER_ID', 'Y_SOURCE', 'Y_ACCOUNT_TYPE', 'Y_ACCOUNT_CLASS', 'Y_GL_ACCOUNT_NAME', 'Y_DMBTR']
+
+        # case: sap dataset
+        elif experiment_parameter['dataset'] == 'sap':
+
+            # init dataset statistics
+            data_parameter = dict()
+
+            # collect dataset statistics
+            data_parameter['dataset'] = experiment_parameter['dataset']
+
+            # set dataset parameter
+            data_parameter['je_identifier_field'] = 'Y_BELNR'
+            data_parameter['je_line_item_field'] = 'Y_JE_ITEM_IDENTIFIER'
+            data_parameter['je_gl_account_field'] = 'Y_HKONT'
+            data_parameter['je_debit_credit_field'] = 'Y_DEBIT_CREDIT'
+
+            # set journal entry attribute information
+            data_parameter['je_header_attributes'] = ['DocumentNr', 'DocType', 'DocTypeDescr', 'UserName Post', 'TransactionDescription']
+            data_parameter['je_segment_attributes_categorical'] = ['PostingKey', 'GL Accountnr', 'GL AccountDescr', 'ProfitCenter', 'CostCenter']
+            data_parameter['je_segment_attributes_numerical'] = ['AmountinUSD']
+            data_parameter['je_attributes'] = data_parameter['je_header_attributes'] + data_parameter['je_segment_attributes_categorical'] + data_parameter['je_segment_attributes_numerical']
+
+            # set journal entry feature information
+            data_parameter['je_header_features'] = ['Y_BLART', 'Y_USNAM', 'Y_TCODE']
+            data_parameter['je_segment_features_categorical'] = ['Y_JE_ITEM_IDENTIFIER', 'Y_DEBIT_CREDIT', 'Y_BSCHL', 'Y_HKONT', 'Y_HKONT_TEXT', 'Y_PRCTR', 'Y_KOSTL']
+            data_parameter['je_segment_features_numerical'] = ['Y_DMBTR']
+            data_parameter['je_features'] = data_parameter['je_header_features'] + data_parameter['je_segment_features_categorical'] + data_parameter['je_segment_features_numerical']
+            data_parameter['je_segment_features'] = data_parameter['je_segment_features_categorical'] + data_parameter['je_segment_features_numerical']
+
+            # set the visualization features
+            data_parameter['hover_attributes'] = ['Y_BELNR', 'Y_JE_ITEM_IDENTIFIER', 'Y_BLART', 'Y_USNAM', 'Y_TCODE', 'Y_BSCHL', 'Y_HKONT_TEXT', 'Y_DMBTR', 'Y_PRCTR', 'Y_KOSTL']
+            data_parameter['visual_attributes'] = ['Y_JE_ITEM_IDENTIFIER', 'Y_USNAM', 'Y_BLART', 'Y_TCODE', 'Y_BSCHL', 'Y_HKONT_TEXT', 'Y_DMBTR', 'Y_PRCTR', 'Y_KOSTL']
 
         # init graph autoencoder experiment
         exp = GraphAutoencoderExperiment.GraphAutoencoderExperiment()
 
         # run graph autoencoder experiment
-        exp.run_experiement(parameter)
+        exp.run_experiement(parameter=experiment_parameter, data_parameter=data_parameter)
 
 # run main function
 if __name__ == '__main__':
