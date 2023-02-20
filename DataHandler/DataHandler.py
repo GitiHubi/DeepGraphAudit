@@ -106,7 +106,7 @@ class DataHandler(object):
 
         # log configuration processing
         now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
-        print('[INFO {}] DataHandler :: transactional EY data of shape {} rows and {} columns successfully loaded.'.format(now, str(original_entries.shape[0]), str(original_entries.shape[1])))
+        print('[INFO {}] DataHandler :: {} transactional data of shape {} rows, {} columns, and belnr {}, successfully loaded.'.format(now, str(parameter['dataset']).upper(), str(original_entries.shape[0]), str(original_entries.shape[1]), str(len(original_entries['JEIdentifier'].unique()))))
 
         ### Step 1: Pre-process journal entries attribute values #####################################################
 
@@ -161,6 +161,10 @@ class DataHandler(object):
         # create the graph learning adjacency and feature matrices
         posting_ids, adj_matrices, feat_matrices, statistics = self.create_adj_feat_matrices(parameter=parameter, statistics=statistics, adjacencies=belnr_hkont_shkzg_entries, features=belnr_hkont_entries, encoded_features=belnr_hkont_entries_encoded)
 
+        # log configuration processing
+        now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
+        print('[INFO {}] DataHandler :: {} transactional data, {} adjacency matrices of {} rows x {} columns, {} feature matrices of {} rows x {} columns created.'.format(now, str(parameter['dataset']).upper(), str(adj_matrices.shape[0]), str(adj_matrices.shape[1]), str(adj_matrices.shape[2]), str(feat_matrices.shape[0]), str(feat_matrices.shape[1]), str(feat_matrices.shape[2])))
+
         # return original and encoded transactions
         return posting_ids, adj_matrices, feat_matrices, belnr_hkont_entries, belnr_entries, statistics
 
@@ -180,7 +184,7 @@ class DataHandler(object):
 
         # log configuration processing
         now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
-        print('[INFO {}] DataHandler :: transactional {} data of shape {} rows, {} columns, and belnr {}, successfully loaded.'.format(now, str(parameter['dataset']), str(original_entries.shape[0]), str(original_entries.shape[1]), str(len(original_entries['DocumentNr'].unique()))))
+        print('[INFO {}] DataHandler :: {} transactional data of shape {} rows, {} columns, and belnr {}, successfully loaded.'.format(now, str(parameter['dataset']), str(original_entries.shape[0]), str(original_entries.shape[1]), str(len(original_entries['JEIdentifier'].unique()))))
 
         ### Step 1: Filter large-scale automated postings ####################################################
 
@@ -198,7 +202,7 @@ class DataHandler(object):
 
         # log configuration processing
         now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
-        print('[INFO {}] DataHandler :: transactional {} data of shape {} rows, {} columns, and belnr {}, successfully loaded.'.format(now, str(parameter['dataset']), str(original_entries.shape[0]), str(original_entries.shape[1]), str(len(original_entries['DocumentNr'].unique()))))
+        print('[INFO {}] DataHandler :: transactional {} data of shape {} rows, {} columns, and belnr {}, successfully loaded.'.format(now, str(parameter['dataset']).upper(), str(original_entries.shape[0]), str(original_entries.shape[1]), str(len(original_entries['DocumentNr'].unique()))))
 
         ### Step 2: Pre-process journal entries attribute values ############################################
 
@@ -252,6 +256,10 @@ class DataHandler(object):
 
         # create the graph learning adjacency and feature matrices
         posting_ids, adj_matrices, feat_matrices, statistics = self.create_adj_feat_matrices(parameter=parameter, statistics=statistics, adjacencies=belnr_hkont_shkzg_entries, features=belnr_hkont_entries, encoded_features=belnr_hkont_entries_encoded)
+
+        # log configuration processing
+        now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
+        print('[INFO {}] DataHandler :: {} transactional data, {} adjacency matrices of {} rows x {} columns, {} feature matrices of {} rows x {} columns created.'.format(now, str(parameter['dataset']).upper(), str(adj_matrices.shape[0]), str(adj_matrices.shape[1]), str(adj_matrices.shape[2]), str(feat_matrices.shape[0]), str(feat_matrices.shape[1]), str(feat_matrices.shape[2])))
 
         # return original and encoded transactions
         return posting_ids, adj_matrices, feat_matrices, belnr_hkont_entries, belnr_entries, statistics
