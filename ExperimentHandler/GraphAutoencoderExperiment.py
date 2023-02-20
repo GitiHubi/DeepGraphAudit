@@ -15,9 +15,6 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-# import wandb logging
-import wandb
-
 # import pytorch libraries
 import torch as th
 from torch.utils.data import DataLoader
@@ -39,6 +36,7 @@ from DataHandler import DataHandler
 from DataHandler.AccountingGNNDataset import AccountingGNNDataset
 from ModelHandler import GNNAutoencoder
 from VisualisationHandler import VisualisationHandler
+from LoggingHandler import LoggingHandler
 
 # class GraphAutoencoderExperiment
 class GraphAutoencoderExperiment(object):
@@ -55,11 +53,8 @@ class GraphAutoencoderExperiment(object):
         # init visualization handler
         self.vha = VisualisationHandler.VisualizationHandler()
 
-        # init wandb log
-        self.wandb_log = {}
-
-        # init wandb run
-        self.wandb_run = {}
+        # init logging handler
+        self.lha = LoggingHandler.LoggingHandler()
 
     # run graph autoencoder experiment
     def run_experiement(self, parameter, data_parameter):
@@ -67,17 +62,18 @@ class GraphAutoencoderExperiment(object):
         # case: wandb logging enabled
         if parameter['wandb']:
 
-            # init weights and biases log
-            self.wandb_run = wandb.init(project='DeepAppleGraph', group='{}'.format(str(parameter['base_dir'].split('/')[-1])), name='{}_ae_graph_sd_{}_ds_{}_{}'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['dataset']), str(parameter['exp_postfix'])))
-
-            # add wandb experiment configuration
-            self.wandb_run.config.update(parameter)
+            # init wandb logging
+            self.lha.init_wandb_run(project='DeepAppleGNN', parameter=parameter)
 
         # create experiment directory
         parameter['exp_dir'], parameter['par_sub_dir'], parameter['sta_sub_dir'], parameter['res_sub_dir'], parameter['vis_sub_dir'], parameter['log_sub_dir'] = self.uha.create_experiment_directory(param=parameter, parent_dir=parameter['base_dir'], architecture='ae_graph')
 
         # save experiment parameters
         self.uha.save_experiment_parameter(param=parameter, parameter_dir=parameter['par_sub_dir'])
+
+        # init experiment logging
+        file_name = '{}_experiment_log_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['train_iterations']).zfill(6), str(parameter['exp_postfix']))
+        self.lha.init_experiment_log(parameter=parameter, file_name=file_name)
 
         # init dataset statistics
         experiment_statistics = {}
@@ -101,43 +97,12 @@ class GraphAutoencoderExperiment(object):
             posting_ids, adj_matrices, feat_matrices, aggregated_entries_belnr_hkont, aggregated_entries_belnr, data_parameter = self.dha.get_gnn_data_range_sap(parameter=parameter, statistics=data_parameter)
 
         # log aggregated entries
-        file_name = '{}_aggregated_entries_all_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
+        file_name = '{}_aggregated_entries_all_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['train_iterations']).zfill(6), str(parameter['exp_postfix']))
         aggregated_entries_belnr_hkont.to_csv(os.path.join(parameter['res_sub_dir'], file_name), sep=',', encoding='utf-8')
 
         # log selected aggregated entries
-        file_name = '{}_aggregated_entries_selected_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
+        file_name = '{}_aggregated_entries_selected_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['train_iterations']).zfill(6), str(parameter['exp_postfix']))
         aggregated_entries_belnr.to_csv(os.path.join(parameter['res_sub_dir'], file_name), sep=',', encoding='utf-8')
-
-        # init experiment statistics
-        summary_cols = [
-            'timestamp'
-            , 'seed'
-            , 'iterations'
-            , 'batch_size'
-            , 'learning_rate_start'
-            , 'learning_rate_iteration'
-            , 'beta'
-            , 'encoder_dim'
-            , 'decoder_dim'
-            , 'embed_dim'
-            , 'bottleneck'
-            , 'no_accounts'
-            , 'feat_embed_dim'
-            , 'no_features'
-            , 'train_loss'
-            , 'train_adj_loss'
-            , 'train_fea_loss'
-            , 'valid_loss'
-            , 'valid_adj_loss'
-            , 'valid_fea_loss'
-            , 'algo'
-            , 'min_cluster_size'
-            , 'min_samples'
-            , 'metric'
-            , 'no_global_anomalies'
-            , 'no_local_anomalies'
-        ]
-        experiment_log = pd.DataFrame(columns=summary_cols)
 
         # determine the number of accounts and features
         experiment_statistics['no_accounts'] = data_parameter['no_posting_accounts']
@@ -157,7 +122,7 @@ class GraphAutoencoderExperiment(object):
         train_loader = DataLoader(prepared_tensor_entries, batch_size=parameter['train_batch_size'], shuffle=True, drop_last=False)
 
         # init the EY eval data loader
-        eval_loader = DataLoader(prepared_tensor_entries, batch_size=parameter['eval_batch_size'], shuffle=False, drop_last=False)
+        eval_loader = DataLoader(prepared_tensor_entries, batch_size=parameter['valid_batch_size'], shuffle=False, drop_last=False)
 
         # init the graph convolutional autoencoder model
         model = GNNAutoencoder.GNNAutoencoder(
@@ -195,10 +160,10 @@ class GraphAutoencoderExperiment(object):
         optimizer = th.optim.Adam(model.parameters(), lr=parameter['learning_rate'], weight_decay=parameter['weight_decay'])
 
         # init learning rate scheduler
-        scheduler = th.optim.lr_scheduler.StepLR(optimizer, step_size=int(parameter['iterations'] / parameter['learning_rate_steps']), gamma=0.1)
+        scheduler = th.optim.lr_scheduler.StepLR(optimizer, step_size=int(parameter['train_iterations'] / parameter['learning_rate_steps']), gamma=0.1)
 
         # run the model training
-        model, experiment_statistics, experiment_log = self.run_model_training(parameter=parameter, data_statistics=data_parameter, experiment_statistics=experiment_statistics, model=model, rec_criterion=rec_criterion, rec_criterion_details=rec_criterion_details, train_loader=train_loader, eval_loader=eval_loader, optimizer=optimizer, scheduler=scheduler, aggregated_entries=aggregated_entries_belnr, experiment_log=experiment_log)
+        model, experiment_statistics = self.run_model_training(parameter=parameter, data_statistics=data_parameter, experiment_statistics=experiment_statistics, model=model, rec_criterion=rec_criterion, rec_criterion_details=rec_criterion_details, train_loader=train_loader, eval_loader=eval_loader, optimizer=optimizer, scheduler=scheduler, aggregated_entries=aggregated_entries_belnr)
 
         #### start evaluation routine
 
@@ -216,42 +181,30 @@ class GraphAutoencoderExperiment(object):
         experiment_statistics['no_local_anomalies'] = int(local_anomalies.shape[0])
 
         # log aggregated entries
-        file_name = '{}_aggregated_entries_selected_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
+        file_name = '{}_aggregated_entries_selected_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['train_iterations']).zfill(6), str(parameter['exp_postfix']))
         aggregated_entries_belnr.to_csv(os.path.join(parameter['res_sub_dir'], file_name), sep=',', encoding='utf-8')
 
         # determine current learning rate
         experiment_statistics['learning_rate'] = optimizer.state_dict()['param_groups'][0]['lr']
 
         # log experiment results
-        file_name = '{}_experiment_log_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
-        experiment_log = self.save_experiment_log(parameter=parameter, experiment_statistics=experiment_statistics, experiment_log=experiment_log, file_name=file_name)
+        file_name = '{}_experiment_log_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['train_iterations']).zfill(6), str(parameter['exp_postfix']))
+        self.lha.save_experiment_log(parameter=parameter, experiment_statistics=experiment_statistics, file_name=file_name)
 
         # set visualization handler directory
         self.vha.set_plot_dir(plot_dir=parameter['vis_sub_dir'])
 
         # run the model visualization
-        self.run_model_visualization(parameter=parameter, data_statistics=data_parameter, experiment_statistics=experiment_statistics, data=aggregated_entries_belnr, average_train_loss=experiment_statistics['average_train_loss'], average_valid_loss=experiment_statistics['average_valid_loss'], iteration=parameter['iterations'])
+        self.run_model_visualization(parameter=parameter, data_statistics=data_parameter, experiment_statistics=experiment_statistics, data=aggregated_entries_belnr, average_train_loss=experiment_statistics['average_train_loss'], average_valid_loss=experiment_statistics['average_valid_loss'], iteration=parameter['train_iterations'])
 
         # case: wandb logging enabled
         if parameter['wandb']:
 
-            # save current experiment statistics to wandb
-            self.wandb_run.summary['no_accounts'] = experiment_statistics['no_accounts']
-            self.wandb_run.summary['no_features'] = experiment_statistics['no_features']
-
-            self.wandb_run.summary['min_cluster_size'] = parameter['min_cluster_size']
-            self.wandb_run.summary['min_samples'] = parameter['min_samples']
-            self.wandb_run.summary['metric'] = parameter['metric']
-
-            self.wandb_run.summary['no_clusters'] = experiment_statistics['no_clusters']
-            self.wandb_run.summary['no_global_anomalies'] = experiment_statistics['no_global_anomalies']
-            self.wandb_run.summary['no_local_anomalies'] = experiment_statistics['no_local_anomalies']
-
-            # finish wandb run
-            self.wandb_run.finish()
+            # finalize and close wandb logging
+            self.lha.close_wandb_run(parameter=parameter, statistics=experiment_statistics)
 
     # run the model training
-    def run_model_training(self, parameter, data_statistics, experiment_statistics, model, rec_criterion, rec_criterion_details, train_loader, eval_loader, optimizer, scheduler, aggregated_entries, experiment_log):
+    def run_model_training(self, parameter, data_statistics, experiment_statistics, model, rec_criterion, rec_criterion_details, train_loader, eval_loader, optimizer, scheduler, aggregated_entries):
 
         # set model in train mode
         model.train()
@@ -265,7 +218,7 @@ class GraphAutoencoderExperiment(object):
         rec_criterion = rec_criterion.to(parameter['device'])
 
         # init and wrap range of training iterations
-        training_iterations = tqdm(range(0, parameter['iterations']))
+        training_iterations = tqdm(range(0, parameter['train_iterations']))
 
         # case: mini-batches are still available
         for i in training_iterations:
@@ -330,20 +283,16 @@ class GraphAutoencoderExperiment(object):
             experiment_statistics['average_train_loss'] = average_train_loss / (i + 1)
             experiment_statistics['average_adj_train_loss'] = average_adj_train_loss / (i + 1)
             experiment_statistics['average_fea_train_loss'] = average_fea_train_loss / (i + 1)
+            experiment_statistics['learning_rate'] = optimizer.state_dict()['param_groups'][0]['lr']
 
             # case: wandb logging enabled
             if parameter['wandb']:
 
-                # fill wandb log dict
-                self.wandb_logging['001_model_training/avg_train_loss'] = average_train_loss / (i + 1)
-                self.wandb_logging['001_model_training/avg_adj_train_loss'] = average_adj_train_loss / (i + 1)
-                self.wandb_logging['001_model_training/avg_fea_train_loss'] = average_fea_train_loss / (i + 1)
-
                 # log training progress
-                self.wandb_run.log(self.wandb_logging)
+                self.lha.update_wandb_run(statistics=experiment_statistics)
 
             # case: eval iteration
-            if (i % parameter['eval_iteration'] == 0) and (i > 0):
+            if (i % parameter['valid_iterations'] == 0) and (i > 0):
 
                 # run model evaluation
                 aggregated_entries, experiment_statistics = self.run_model_validation(parameter, data_statistics, experiment_statistics, model, rec_criterion, rec_criterion_details, eval_loader, aggregated_entries)
@@ -362,8 +311,8 @@ class GraphAutoencoderExperiment(object):
                 experiment_statistics['no_local_anomalies'] = int(local_anomalies.shape[0])
 
                 # log experiment results
-                file_name = '{}_experiment_log_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['iterations']).zfill(6), str(parameter['exp_postfix']))
-                experiment_log = self.save_experiment_log(parameter=parameter, experiment_statistics=experiment_statistics, experiment_log=experiment_log, file_name=file_name)
+                file_name = '{}_experiment_log_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['train_iterations']).zfill(6), str(parameter['exp_postfix']))
+                self.lha.save_experiment_log(parameter=parameter, experiment_statistics=experiment_statistics, file_name=file_name)
 
                 # set visualization handler directory
                 self.vha.set_plot_dir(plot_dir=parameter['vis_sub_dir'])
@@ -376,7 +325,7 @@ class GraphAutoencoderExperiment(object):
                 # self.uha.save_client_model_checkpoint(filename=file_name, iteration=i, model=model, optimizer=optimizer, chpt_dir=parameter['log_sub_dir'])
 
         # return model training results
-        return model, experiment_statistics, experiment_log
+        return model, experiment_statistics
 
     # run the model evaluation
     def run_model_validation(self, parameter, data_statistics, experiment_statistics, model, rec_criterion, rec_criterion_details, eval_loader, aggregated_entries):
@@ -614,10 +563,10 @@ class GraphAutoencoderExperiment(object):
         hdb = hdbscan.HDBSCAN(gen_min_span_tree=True).fit(aggregated_entries[['z1', 'z2']])
 
         # specify the grid hdbscan grid search paramters
-        param_dist = {'min_samples': [5, 10, 30, 50, 60, 100],
-                      'min_cluster_size': [10, 50, 100, 200, 300, 400, 500, 600],
-                      'cluster_selection_method': ['eom', 'leaf'],
-                      'metric': ['euclidean', 'manhattan']
+        param_dist = {'min_samples': parameter['grid_min_samples'],
+                      'min_cluster_size': parameter['grid_min_cluster_size'],
+                      'cluster_selection_method': parameter['grid_cluster_selection_method'],
+                      'metric': parameter['grid_metric']
                       }
 
         # init grid search optimization criterion
@@ -634,49 +583,6 @@ class GraphAutoencoderExperiment(object):
 
         # return best parameters
         return best_parameters
-
-    # save experiment statistics
-    def save_experiment_log(self, parameter, experiment_statistics, experiment_log, file_name):
-
-        # collect experiment statistics
-        exp_stats = {
-            'timestamp': str(dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S'))
-            , 'seed': parameter['seed']
-            , 'iterations': parameter['iterations']
-            , 'batch_size': parameter['train_batch_size']
-            , 'learning_rate_start': parameter['learning_rate']
-            , 'learning_rate_iteration': experiment_statistics['learning_rate']
-            , 'beta': parameter['beta']
-            , 'encoder_dim': parameter['encoder_dim']
-            , 'decoder_dim': parameter['decoder_dim']
-            , 'embed_dim': parameter['embed_dim']
-            , 'bottleneck': parameter['bottleneck']
-            , 'no_accounts': int(experiment_statistics['no_accounts'])
-            , 'feat_embed_dim': parameter['feat_embed_dim']
-            , 'no_features': int(experiment_statistics['no_features'])
-            , 'train_loss': np.round(experiment_statistics['average_train_loss'], 6)
-            , 'train_adj_loss': np.round(experiment_statistics['average_adj_train_loss'], 6)
-            , 'train_fea_loss': np.round(experiment_statistics['average_fea_train_loss'], 6)
-            , 'valid_loss': np.round(experiment_statistics['average_valid_loss'], 6)
-            , 'valid_adj_loss': np.round(experiment_statistics['average_adj_valid_loss'], 6)
-            , 'valid_fea_loss': np.round(experiment_statistics['average_fea_valid_loss'], 6)
-            , 'algo': parameter['algo']
-            , 'min_cluster_size': parameter['min_cluster_size']
-            , 'min_samples': parameter['min_samples']
-            , 'metric': parameter['metric']
-            , 'no_clusters': int(experiment_statistics['no_clusters'])
-            , 'no_global_anomalies': int(experiment_statistics['no_global_anomalies'])
-            , 'no_local_anomalies': int(experiment_statistics['no_local_anomalies'])
-        }
-
-        # determine and collect training summary statistics of current epoch
-        experiment_log = experiment_log.append(exp_stats, ignore_index=True)
-
-        # save current experiment statistics
-        experiment_log.to_csv(os.path.join(parameter['sta_sub_dir'], file_name), sep=',', encoding='utf-8')
-
-        # return update experiment log
-        return experiment_log
 
     # run the model and result visualization
     def run_model_visualization(self, parameter, data_statistics, experiment_statistics, data, average_train_loss, average_valid_loss, iteration):
