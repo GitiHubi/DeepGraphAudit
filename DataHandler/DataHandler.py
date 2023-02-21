@@ -2,6 +2,8 @@
 import os
 
 # limit the number of threads
+import torch
+
 os.environ["OMP_NUM_THREADS"] = "4" # export OMP_NUM_THREADS=4
 os.environ["OPENBLAS_NUM_THREADS"] = "4" # export OPENBLAS_NUM_THREADS=4
 os.environ["MKL_NUM_THREADS"] = "4" # export MKL_NUM_THREADS=6
@@ -163,7 +165,7 @@ class DataHandler(object):
 
         # log configuration processing
         now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
-        print('[INFO {}] DataHandler :: {} transactional data, {} adjacency matrices of {} rows x {} columns, {} feature matrices of {} rows x {} columns created.'.format(now, str(parameter['dataset']).upper(), str(adj_matrices.shape[0]), str(adj_matrices.shape[1]), str(adj_matrices.shape[2]), str(feat_matrices.shape[0]), str(feat_matrices.shape[1]), str(feat_matrices.shape[2])))
+        print('[INFO {}] DataHandler :: {} transactional data, {} adjacency matrices and {} feature matrices created.'.format(now, str(parameter['dataset']).upper(), str(len(adj_matrices)), str(len(feat_matrices))))
 
         # return original and encoded transactions
         return posting_ids, adj_matrices, feat_matrices, belnr_hkont_entries, belnr_entries, statistics
@@ -545,42 +547,93 @@ class DataHandler(object):
         # determine unique posting ids
         posting_ids = adjacencies.groupby([statistics['je_identifier_field']]).count().index
 
-        ### prepare adjacency matrix and feature vector filling
+        if parameter['exp_mode'] == 'complete':
 
-        # init adjacency and feature matrices
-        adj_matrices = np.zeros([len(posting_ids), statistics['no_posting_accounts'], statistics['no_posting_accounts']])
-        feat_matrices = np.zeros([len(posting_ids), statistics['no_posting_accounts'], statistics['no_posting_features']])
+            ### prepare adjacency matrix and feature vector filling
 
-        # iterate over distinct posting ids
-        for i, posting_id in enumerate(posting_ids):
+            # init adjacency and feature matrices
+            adj_matrices = np.zeros([len(posting_ids), statistics['no_posting_accounts'], statistics['no_posting_accounts']])
+            feat_matrices = np.zeros([len(posting_ids), statistics['no_posting_accounts'], statistics['no_posting_features']])
 
-            # init posting adjacency matrix
-            adj_matrix = np.zeros([statistics['no_posting_accounts'], statistics['no_posting_accounts']])
+            # iterate over distinct posting ids
+            for i, posting_id in enumerate(posting_ids):
 
-            # create journal entry adjacency matrix of current journal entry
-            adj_matrix = self.fill_adjacency_matrix(je_identifier_field=statistics['je_identifier_field'], je_gl_account_code_field=statistics['je_gl_account_field'], je_debit_credit_field=statistics['je_debit_credit_field'], adj_matrix=adj_matrix, entries=adjacencies, posting_id=posting_id)
+                # init posting adjacency matrix
+                adj_matrix = np.zeros([statistics['no_posting_accounts'], statistics['no_posting_accounts']])
 
-            # add identity matrix to account adjacency matrix
-            adj_matrix += np.identity(statistics['no_posting_accounts'])
+                # create journal entry adjacency matrix of current journal entry
+                adj_matrix = self.fill_adjacency_matrix(je_identifier_field=statistics['je_identifier_field'], je_gl_account_code_field=statistics['je_gl_account_field'], je_debit_credit_field=statistics['je_debit_credit_field'], adj_matrix=adj_matrix, entries=adjacencies, posting_id=posting_id)
 
-            # collect adjacency matrix -> nodes x nodes
-            adj_matrices[i, :, :] = adj_matrix
+                # add identity matrix to account adjacency matrix -> Todo: Update this dynamic adjacency matrices
+                adj_matrix += np.identity(statistics['no_posting_accounts'])
 
-            # init posting feature matrix
-            feat_matrix = np.zeros([statistics['no_posting_accounts'], statistics['no_posting_features']])
+                # collect adjacency matrix -> nodes x nodes
+                adj_matrices[i, :, :] = adj_matrix
 
-            # create journal entry feature matrix of the SAP dataset
-            feat_matrix = self.fill_feature_matrix(je_identifier_field=statistics['je_identifier_field'], je_gl_account_code_field=statistics['je_gl_account_field'], je_features_field=statistics['je_features'], feat_matrix=feat_matrix, entries=features, features=encoded_features, posting_id=posting_id)
+                # init posting feature matrix
+                feat_matrix = np.zeros([statistics['no_posting_accounts'], statistics['no_posting_features']])
 
-            # collect feature matrix -> nodes x features
-            feat_matrices[i, :, :] = feat_matrix
+                # create journal entry feature matrix of the SAP dataset
+                feat_matrix = self.fill_feature_matrix(je_identifier_field=statistics['je_identifier_field'], je_gl_account_code_field=statistics['je_gl_account_field'], je_features_field=statistics['je_features'], feat_matrix=feat_matrix, entries=features, features=encoded_features, posting_id=posting_id)
 
-            # case: log adjacency matrix creation process
-            if i % 1000 == 0:
+                # collect feature matrix -> nodes x features
+                feat_matrices[i, :, :] = feat_matrix
 
-                # log configuration processing
-                now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
-                print('[INFO {}] DataHandler :: {} adjacency and feature matrix: {} of: {} matrices created.'.format(now, str(statistics['dataset']).upper(), str(i), str(len(posting_ids))))
+                # case: log adjacency matrix creation process
+                if i % 1000 == 0:
+
+                    # log configuration processing
+                    now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
+                    print('[INFO {}] DataHandler :: {} adjacency and feature matrix: {} of: {} matrices created.'.format(now, str(statistics['dataset']).upper(), str(i), str(len(posting_ids))))
+
+        if parameter['exp_mode'] == 'dynamic':
+
+            # init adjacency and feature matrices
+            adj_matrices = []
+            feat_matrices = []
+
+            # iterate over distinct posting ids
+            for i, posting_id in enumerate(posting_ids):
+
+                # determine current posting line items
+                posting_line_items = adjacencies[adjacencies[statistics['je_identifier_field']] == posting_id]
+
+                # determine number of unique accounts
+                no_posting_accounts = len(posting_line_items[statistics['je_gl_account_field']].unique())
+
+                # init posting adjacency matrix
+                adj_matrix = np.zeros([no_posting_accounts, no_posting_accounts])
+
+                # create journal entry adjacency matrix of current journal entry
+                adj_matrix = self.fill_adjacency_matrix_dynamic(je_identifier_field=statistics['je_identifier_field'], je_gl_account_code_field=statistics['je_gl_account_field'], je_debit_credit_field=statistics['je_debit_credit_field'], adj_matrix=adj_matrix, entries=adjacencies, posting_id=posting_id)
+
+                # add identity matrix to account adjacency matrix ->
+                adj_matrix += np.identity(no_posting_accounts)
+
+                # collect adjacency matrix -> line-item nodes x line-item nodes
+                adj_matrices.append(adj_matrix)
+
+                # determine current posting line items
+                posting_line_items = features[features[statistics['je_identifier_field']] == posting_id]
+
+                # determine number of unique accounts
+                no_posting_accounts = len(posting_line_items[statistics['je_gl_account_field']].unique())
+
+                # init posting feature matrix
+                feat_matrix = np.zeros([no_posting_accounts, statistics['no_posting_features']])
+
+                # create journal entry feature matrix of the SAP dataset
+                feat_matrix = self.fill_feature_matrix_dynamic(je_identifier_field=statistics['je_identifier_field'], je_gl_account_code_field=statistics['je_gl_account_field'], je_features_field=statistics['je_features'], feat_matrix=feat_matrix, entries=features, features=encoded_features, posting_id=posting_id)
+
+                # collect feature matrix -> line-item nodes x features
+                feat_matrices.append(feat_matrix)
+
+                # case: log adjacency matrix creation process
+                if i % 1000 == 0:
+
+                    # log configuration processing
+                    now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
+                    print('[INFO {}] DataHandler :: {} adjacency and feature matrix: {} of: {} matrices created.'.format(now, str(statistics['dataset']).upper(), str(i), str(len(posting_ids))))
 
         # return adjacency and feature matrices
         return posting_ids, adj_matrices, feat_matrices, statistics
@@ -623,14 +676,58 @@ class DataHandler(object):
         # return adjacency matrix
         return adj_matrix
 
+        # create single journal entry adjacency matrix of a given dataset
+    def fill_adjacency_matrix_dynamic(self, je_identifier_field, je_gl_account_code_field, je_debit_credit_field, adj_matrix, entries, posting_id):
+
+        # determine current posting line items
+        posting_line_items = entries[entries[je_identifier_field] == posting_id]
+
+        # encode posting line items accounts
+        posting_line_items['je_gl_account_encoding'] = pd.Categorical(posting_line_items[je_gl_account_code_field]).codes
+
+        # determine all possible account pairs
+        account_pairs = list(it.combinations(posting_line_items['je_gl_account_encoding'], 2))
+
+        # iterate over distinct account pairs
+        for pair in account_pairs:
+
+            # determine pairs debit and credit structure
+            pair_a_debit_credit = list(posting_line_items[posting_line_items['je_gl_account_encoding'] == pair[0]][je_debit_credit_field])[0]
+            pair_b_debit_credit = list(posting_line_items[posting_line_items['je_gl_account_encoding'] == pair[1]][je_debit_credit_field])[0]
+
+            # case: first account credit, second account debit
+            if (pair_a_debit_credit == 'Credit') & (pair_b_debit_credit == 'Debit'):
+
+                # fill adjacency matrix: credit -> debit
+                adj_matrix[pair[0]][pair[1]] = 1
+
+            # case: first account debit, second account credit
+            elif (pair_a_debit_credit == 'Debit') & (pair_b_debit_credit == 'Credit'):
+
+                # fill adjacency matrix: debit -> credit
+                adj_matrix[pair[1]][pair[0]] = 1
+
+            # case: first account similar to second
+            else:
+
+                # fill adjacency matrix
+                adj_matrix[pair[1]][pair[0]] = 1
+                adj_matrix[pair[0]][pair[1]] = 1
+
+        # return adjacency matrix
+        return adj_matrix
+
     # create single journal entry adjacency matrix of the EY dataset
     def fill_feature_matrix(self, je_identifier_field, je_gl_account_code_field, je_features_field, feat_matrix, entries, features, posting_id):
 
         # determine current posting line items
         posting_line_items = entries[entries[je_identifier_field] == posting_id]
 
+        # encode posting line items accounts
+        posting_line_items['je_gl_account_encoding'] = pd.Categorical(posting_line_items[je_gl_account_code_field]).codes
+
         # determine current posting line items accounts
-        posting_accounts = [int(account) for account in posting_line_items[je_gl_account_code_field].values]
+        posting_accounts = [int(account) for account in posting_line_items['je_gl_account_encoding'].values]
 
         # determine current posting features
         posting_features = features[features[je_identifier_field] == posting_id]
@@ -654,6 +751,51 @@ class DataHandler(object):
             else:
 
                 print('Hello World! - shouldn`t happen since we did aggregate before...')
+
+        # return feature matrix
+        return feat_matrix
+
+        # create single journal entry adjacency matrix of the EY dataset
+    def fill_feature_matrix_dynamic(self, je_identifier_field, je_gl_account_code_field, je_features_field, feat_matrix, entries, features, posting_id):
+
+        # determine current posting line items
+        posting_line_items = entries[entries[je_identifier_field] == posting_id]
+
+        # encode posting line items accounts
+        posting_line_items['je_gl_account_encoding'] = pd.Categorical(posting_line_items[je_gl_account_code_field]).codes
+
+        # determine current posting line items accounts
+        posting_accounts = [int(account) for account in posting_line_items['je_gl_account_encoding'].values]
+
+        # determine current posting features
+        posting_features = features[features[je_identifier_field] == posting_id]
+
+        # encode posting features accounts
+        posting_features['je_gl_account_encoding'] = pd.Categorical(posting_line_items[je_gl_account_code_field]).codes
+
+        # iterate over posting accounts
+        for account in posting_accounts:
+
+            # determine current posting account features
+            posting_account_features = posting_features[posting_features['je_gl_account_encoding'] == account]
+
+            # case: one-time account usage
+            if posting_account_features.shape[0] == 1:
+
+                # determine account features and convert to float
+                features = [float(feat) for feat in posting_account_features[je_features_field].to_numpy()[0]]
+
+                # fill posting features
+                feat_matrix[account, :] = features
+
+            # case: multiple-time account usage
+            else:
+
+                print('Hello World! - shouldn`t happen since we did aggregate before...')
+
+        #if feat_matrix.shape[0] == 1:
+
+            # print('Hello World!')
 
         # return feature matrix
         return feat_matrix
@@ -978,3 +1120,24 @@ class DataHandler(object):
 
         # return the encoded entries
         return encoded_entries, statistics
+
+    # define customized collate function
+    def collate_batch(self, batch):
+
+        # init adj matrix and feat matrix lists
+        adj_matrices = []
+        feat_matrices = []
+
+        # iterate batch adj and feat matrix
+        for (adj_matrix, feat_matrix) in batch:
+
+            # convert to pytorch tensors
+            adj_matrix_tensor = torch.tensor(adj_matrix, dtype=torch.float64)
+            feat_matrix_tensor = torch.tensor(feat_matrix, dtype=torch.float64)
+
+            # append to batch list
+            adj_matrices.append(adj_matrix_tensor)
+            feat_matrices.append(feat_matrix_tensor)
+
+        # return adj and feature matrices
+        return adj_matrices, feat_matrices
