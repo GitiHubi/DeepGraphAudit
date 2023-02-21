@@ -33,14 +33,13 @@ import hdbscan
 # import project libraries
 from UtilsHandler import UtilsHandler
 from DataHandler import DataHandler
-from DataHandler.AccountingGNNDatasetComplete import AccountingGNNDatasetComplete
 from DataHandler.AccountingGNNDatasetDynamic import AccountingGNNDatasetDynamic
-from ModelHandler import GNNAutoencoder
+from ModelHandler import GNNAutoencoderDynamic
 from VisualisationHandler import VisualisationHandler
 from LoggingHandler import LoggingHandler
 
 # class GraphAutoencoderExperiment
-class GraphAutoencoderExperiment(object):
+class GraphAutoencoderExperimentDynamic(object):
 
     # init class constructor
     def __init__(self):
@@ -112,43 +111,26 @@ class GraphAutoencoderExperiment(object):
         # update the encoder input dim depending on the number of features
         parameter['encoder_dim'].insert(0, experiment_statistics['no_features'])
         parameter['decoder_dim'].insert(len(parameter['decoder_dim']), experiment_statistics['no_features'])
-        # parameter['decoder_dim'].insert(len(parameter['decoder_dim']), experiment_statistics['no_accounts'] * experiment_statistics['no_features'])
-        # parameter['decoder_dim'].insert(len(parameter['decoder_dim']), experiment_statistics['no_accounts'] * experiment_statistics['no_accounts'])
 
-        # case: dynamic mode enabled
-        if parameter['exp_mode'] == 'complete':
-
-            # convert the EY training data to pytorch tensor
-            prepared_tensor_entries = AccountingGNNDatasetComplete(adj_matrices=adj_matrices, feat_matrices=feat_matrices)
-
-            # init the EY train data loader
-            #train_loader = DataLoader(prepared_tensor_entries, batch_size=parameter['train_batch_size'], shuffle=True, drop_last=False)
-
-        # case: dynamic mode enabled
-        elif parameter['exp_mode'] == 'dynamic':
-
-            # convert the EY training data to pytorch tensor
-            prepared_tensor_entries = AccountingGNNDatasetDynamic(adj_matrices=adj_matrices, feat_matrices=feat_matrices)
-
-            # init the EY train data loader
-            #train_loader = DataLoader(prepared_tensor_entries, batch_size=parameter['train_batch_size'], shuffle=True, drop_last=False, collate_fn=self.dha.collate_batch)
+        # convert the training data to pytorch tensor
+        prepared_tensor_entries = AccountingGNNDatasetDynamic(adj_matrices=adj_matrices, feat_matrices=feat_matrices)
 
         #### start training routine
 
-        # init the EY train data loader
+        # init the train data loader
         train_loader = DataLoader(prepared_tensor_entries, batch_size=parameter['train_batch_size'], shuffle=True, drop_last=False)
 
-        # init the EY eval data loader
+        # init the eval data loader
         eval_loader = DataLoader(prepared_tensor_entries, batch_size=parameter['valid_batch_size'], shuffle=False, drop_last=False)
 
-        # init the graph convolutional autoencoder model
-        model = GNNAutoencoder.GNNAutoencoder(
-            statistics=data_parameter,
-            feat_embed_dim=parameter['feat_embed_dim'],
-            encoder_dim=parameter['encoder_dim'],
-            bottleneck=parameter['bottleneck'],
-            decoder_dim=parameter['decoder_dim'],
-            device=parameter['device']
+        # init the graph autoencoder model
+        model = GNNAutoencoderDynamic.GNNAutoencoderDynamic(
+            statistics=data_parameter
+            , feat_embed_dim=parameter['feat_embed_dim']
+            , encoder_dim=parameter['encoder_dim']
+            , bottleneck=parameter['bottleneck']
+            , decoder_dim=parameter['decoder_dim']
+            , device=parameter['device']
         ).to(parameter['device'])
 
         # log configuration processing
@@ -256,17 +238,20 @@ class GraphAutoencoderExperiment(object):
             _, mu, sigma, feat_matrices_recon, adj_matrices_recon = model(feat_matrices_batch, adj_matrices_batch)
 
             # init feature reconstruction loss
-            train_batch_feat_rec_loss = th.zeros(1).to(parameter['device'])
+            #train_batch_feat_rec_loss = th.zeros(1).to(parameter['device'])
 
             # iterate over dataset features
-            for k, feature in enumerate(data_statistics['je_features']):
+            #for k, feature in enumerate(data_statistics['je_features']):
 
                 # determine original and reconstructed feature encodings
-                feat_matrices_batch_encodings = feat_matrices_batch[:, :, k * parameter['feat_embed_dim']: (k+1) * parameter['feat_embed_dim']]
-                feat_matrices_recon_encodings = feat_matrices_recon[:, :, k * parameter['feat_embed_dim']: (k+1) * parameter['feat_embed_dim']]
+                #feat_matrices_batch_encodings = feat_matrices_batch[:, :, k * parameter['feat_embed_dim']: (k+1) * parameter['feat_embed_dim']]
+                #feat_matrices_recon_encodings = feat_matrices_recon[:, :, k * parameter['feat_embed_dim']: (k+1) * parameter['feat_embed_dim']]
 
                 # compute feature vector loss
                 # train_batch_feat_rec_loss += rec_criterion(input=feat_matrices_recon_encodings, target=feat_matrices_batch_encodings)
+
+            # determine adjacency matrix normalization factor
+            # norm = adj_matrices_batch.shape[1] * adj_matrices_batch.shape[1] / float((adj_matrices_batch.shape[1] * adj_matrices_batch.shape[1] - adj_matrices_batch.sum()) * 2)
 
             # compute feature vector loss
             train_batch_feat_rec_loss = rec_criterion(input=feat_matrices_recon, target=feat_matrices_batch)
@@ -386,17 +371,20 @@ class GraphAutoencoderExperiment(object):
                 ### compute batch reconstruction loss
 
                 # init feature vector reconstruction loss
-                valid_batch_feat_rec_loss = th.zeros(1).to(parameter['device'])
+                # valid_batch_feat_rec_loss = th.zeros(1).to(parameter['device'])
 
                 # iterate over dataset features
-                for k, feature in enumerate(data_statistics['je_features']):
+                #for k, feature in enumerate(data_statistics['je_features']):
 
                     # determine original and reconstructed feature encodings
-                    feat_matrices_batch_encodings = feat_matrices_batch[:, :, k * parameter['feat_embed_dim']: (k+1) * parameter['feat_embed_dim']]
-                    feat_matrices_recon_encodings = feat_matrices_recon[:, :, k * parameter['feat_embed_dim']: (k+1) * parameter['feat_embed_dim']]
+                    #feat_matrices_batch_encodings = feat_matrices_batch[:, :, k * parameter['feat_embed_dim']: (k+1) * parameter['feat_embed_dim']]
+                    #feat_matrices_recon_encodings = feat_matrices_recon[:, :, k * parameter['feat_embed_dim']: (k+1) * parameter['feat_embed_dim']]
 
                     # compute feature vector loss
-                    valid_batch_feat_rec_loss += rec_criterion(input=feat_matrices_recon_encodings, target=feat_matrices_batch_encodings)
+                    #valid_batch_feat_rec_loss += rec_criterion(input=feat_matrices_recon_encodings, target=feat_matrices_batch_encodings)
+
+                # determine adjacency matrix normalization factor
+                # norm = adj_matrices_batch.shape[1] * adj_matrices_batch.shape[1] / float((adj_matrices_batch.shape[1] * adj_matrices_batch.shape[1] - adj_matrices_batch.sum()) * 2)
 
                 # compute feature vector loss
                 valid_batch_feat_rec_loss = rec_criterion(input=feat_matrices_recon, target=feat_matrices_batch)
@@ -415,22 +403,25 @@ class GraphAutoencoderExperiment(object):
                 ### compute detailed reconstruction losses
 
                 # init feature vector reconstruction loss
-                valid_batch_feat_rec_loss_details = th.zeros(feat_matrices_batch_encodings.shape[0]).to(parameter['device'])
+                # valid_batch_feat_rec_loss_details = th.zeros(feat_matrices_batch_encodings.shape[0]).to(parameter['device'])
 
                 # iterate over dataset features
-                for k, feature in enumerate(data_statistics['je_features']):
+                #for k, feature in enumerate(data_statistics['je_features']):
 
                     # determine original and reconstructed feature encodings
-                    feat_matrices_batch_encodings = feat_matrices_batch[:, :, k * parameter['feat_embed_dim']: (k+1) * parameter['feat_embed_dim']]
-                    feat_matrices_recon_encodings = feat_matrices_recon[:, :, k * parameter['feat_embed_dim']: (k+1) * parameter['feat_embed_dim']]
+                    #feat_matrices_batch_encodings = feat_matrices_batch[:, :, k * parameter['feat_embed_dim']: (k+1) * parameter['feat_embed_dim']]
+                    #feat_matrices_recon_encodings = feat_matrices_recon[:, :, k * parameter['feat_embed_dim']: (k+1) * parameter['feat_embed_dim']]
 
                     # compute feature vector loss
-                    valid_batch_feat_rec_loss_details += rec_criterion_details(input=feat_matrices_recon_encodings, target=feat_matrices_batch_encodings).mean(axis=1).mean(axis=1)
+                    #valid_batch_feat_rec_loss_details += rec_criterion_details(input=feat_matrices_recon_encodings, target=feat_matrices_batch_encodings).mean(axis=1).mean(axis=1)
 
-                # compute and add categorical reconstruction loss
-                # valid_batch_feat_rec_loss_details = rec_criterion_details(input=feat_matrices_recon, target=feat_matrices_batch).mean(axis=1).mean(axis=1)
+                # determine adjacency matrix normalization factor
+                # norm = adj_matrices_batch.shape[1] * adj_matrices_batch.shape[1] / float((adj_matrices_batch.shape[1] * adj_matrices_batch.shape[1] - adj_matrices_batch.sum()) * 2)
 
-                # compute and add categorical reconstruction loss
+                # compute feature vector loss
+                valid_batch_feat_rec_loss_details = rec_criterion_details(input=feat_matrices_recon, target=feat_matrices_batch).mean(axis=1).mean(axis=1)
+
+                # compute adjacency matrix loss
                 valid_batch_adj_rec_loss_details = rec_criterion_details(input=adj_matrices_recon, target=adj_matrices_batch).mean(axis=1).mean(axis=1)
 
                 # compute and add adjacency and feature reconstruction loss
