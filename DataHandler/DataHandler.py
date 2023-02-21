@@ -547,7 +547,7 @@ class DataHandler(object):
         # determine unique posting ids
         posting_ids = adjacencies.groupby([statistics['je_identifier_field']]).count().index
 
-        if parameter['exp_mode'] == 'complete':
+        if parameter['mode'] == 'static':
 
             ### prepare adjacency matrix and feature vector filling
 
@@ -586,7 +586,7 @@ class DataHandler(object):
                     now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
                     print('[INFO {}] DataHandler :: {} adjacency and feature matrix: {} of: {} matrices created.'.format(now, str(statistics['dataset']).upper(), str(i), str(len(posting_ids))))
 
-        if parameter['exp_mode'] == 'dynamic':
+        if parameter['mode'] == 'dynamic':
 
             # init adjacency and feature matrices
             adj_matrices = []
