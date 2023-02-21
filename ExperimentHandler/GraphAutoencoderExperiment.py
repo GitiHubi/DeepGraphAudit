@@ -33,7 +33,8 @@ import hdbscan
 # import project libraries
 from UtilsHandler import UtilsHandler
 from DataHandler import DataHandler
-from DataHandler.AccountingGNNDataset import AccountingGNNDataset
+from DataHandler.AccountingGNNDatasetComplete import AccountingGNNDatasetComplete
+from DataHandler.AccountingGNNDatasetDynamic import AccountingGNNDatasetDynamic
 from ModelHandler import GNNAutoencoder
 from VisualisationHandler import VisualisationHandler
 from LoggingHandler import LoggingHandler
@@ -110,11 +111,27 @@ class GraphAutoencoderExperiment(object):
 
         # update the encoder input dim depending on the number of features
         parameter['encoder_dim'].insert(0, experiment_statistics['no_features'])
-        parameter['decoder_dim'].insert(len(parameter['decoder_dim']), experiment_statistics['no_accounts'] * experiment_statistics['no_features'])
-        parameter['decoder_dim'].insert(len(parameter['decoder_dim']), experiment_statistics['no_accounts'] * experiment_statistics['no_accounts'])
+        parameter['decoder_dim'].insert(len(parameter['decoder_dim']), experiment_statistics['no_features'])
+        # parameter['decoder_dim'].insert(len(parameter['decoder_dim']), experiment_statistics['no_accounts'] * experiment_statistics['no_features'])
+        # parameter['decoder_dim'].insert(len(parameter['decoder_dim']), experiment_statistics['no_accounts'] * experiment_statistics['no_accounts'])
 
-        # convert the EY training data to pytorch tensor
-        prepared_tensor_entries = AccountingGNNDataset(adj_matrices=adj_matrices, feat_matrices=feat_matrices)
+        # case: dynamic mode enabled
+        if parameter['exp_mode'] == 'complete':
+
+            # convert the EY training data to pytorch tensor
+            prepared_tensor_entries = AccountingGNNDatasetComplete(adj_matrices=adj_matrices, feat_matrices=feat_matrices)
+
+            # init the EY train data loader
+            #train_loader = DataLoader(prepared_tensor_entries, batch_size=parameter['train_batch_size'], shuffle=True, drop_last=False)
+
+        # case: dynamic mode enabled
+        elif parameter['exp_mode'] == 'dynamic':
+
+            # convert the EY training data to pytorch tensor
+            prepared_tensor_entries = AccountingGNNDatasetDynamic(adj_matrices=adj_matrices, feat_matrices=feat_matrices)
+
+            # init the EY train data loader
+            #train_loader = DataLoader(prepared_tensor_entries, batch_size=parameter['train_batch_size'], shuffle=True, drop_last=False, collate_fn=self.dha.collate_batch)
 
         #### start training routine
 
@@ -249,7 +266,10 @@ class GraphAutoencoderExperiment(object):
                 feat_matrices_recon_encodings = feat_matrices_recon[:, :, k * parameter['feat_embed_dim']: (k+1) * parameter['feat_embed_dim']]
 
                 # compute feature vector loss
-                train_batch_feat_rec_loss += rec_criterion(input=feat_matrices_recon_encodings, target=feat_matrices_batch_encodings)
+                # train_batch_feat_rec_loss += rec_criterion(input=feat_matrices_recon_encodings, target=feat_matrices_batch_encodings)
+
+            # compute feature vector loss
+            train_batch_feat_rec_loss = rec_criterion(input=feat_matrices_recon, target=feat_matrices_batch)
 
             # compute adjacency matrix loss
             train_batch_adj_rec_loss = rec_criterion(input=adj_matrices_recon, target=adj_matrices_batch)
