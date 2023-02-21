@@ -35,11 +35,12 @@ def main():
     parser.add_argument('-data_dir', help='', nargs='?', type=str, default='./100_datasets')
     parser.add_argument('-base_dir', help='', nargs='?', type=str, default='./200_experiments')
     parser.add_argument('-exp_postfix', type=str, default='poc', help='postfix of experimental runs.')
+    parser.add_argument('-exp_mode', type=str, default='dynamic', help='postfix of experimental runs.')  # complete dynamic
 
     # data parameter
-    parser.add_argument('-dataset', help='', nargs='?', type=str,  default='sap') # ey, serpro, sap
+    parser.add_argument('-dataset', help='', nargs='?', type=str,  default='ey') # ey, serpro, sap
     parser.add_argument('-sample_eval', help='', nargs='?', type=str, default='False')
-    parser.add_argument('-sample_size', help='', nargs='?', type=int, default=2001)
+    parser.add_argument('-sample_size', help='', nargs='?', type=int, default=2002)
     parser.add_argument('-min_line_items', help='', nargs='?', type=int, default=2)
     parser.add_argument('-max_line_items', help='', nargs='?', type=int, default=20)
 
@@ -49,35 +50,38 @@ def main():
     parser.add_argument('-decoder_dim', nargs='+', default=[2, 4, 8, 16], help='the dimensions of the decoder fc layers.') # [2, 4, 8, 16, 32, 64, 128]
     parser.add_argument('-encoder_type', type=str, default='embed', help='the type of feature encoding') # onehot, embed
     parser.add_argument('-bottleneck', type=str, default='linear', help='the bottleneck non-linearity.') # linear, tanh, lrelu
-    parser.add_argument('-feat_embed_dim', type=int, default=8, help='the feature dimension of the graph embeddings.')
-    parser.add_argument('-embed_dim', type=int, default=2, help='the dimension of the graph embeddings.')
+    parser.add_argument('-feat_embed_dim', type=int, default=2, help='the feature dimension of the graph embeddings.')
+    parser.add_argument('-lat_embed_dim', type=int, default=2, help='the dimension of the graph embeddings.')
 
     # model training parameter
-    parser.add_argument('-iterations', type=int, default=1001, help='the number of training iterations.')
-    parser.add_argument('-eval_iteration', type=int, default=100, help='the eval training iteration.')
-    parser.add_argument('-train_batch_size', type=int, default=64, help='the training batch size.')
+    parser.add_argument('-train_iterations', type=int, default=100001, help='the number of training iterations.')
+    parser.add_argument('-train_batch_size', type=int, default=1, help='the training batch size.')
     parser.add_argument('-loss', type=str, default='mse', help='the training and validation loss.') #mse, bce
     parser.add_argument('-learning_rate', type=float, default=0.01, help='the learning rate.')
-    parser.add_argument('-learning_rate_steps', type=int, default=4, help='the learning rate steps.')
+    parser.add_argument('-learning_rate_steps', type=int, default=2, help='the learning rate steps.')
     parser.add_argument('-weight_decay', nargs='?', type=float, default=1e-6, help='the optimizer weight decay.')
     parser.add_argument('-kl_div_alpha', type=float, default=0.0, help='the kl-divergence loss regularizer.')
     parser.add_argument('-beta', type=float, default=0.5, help='the loss regularizer.')
     parser.add_argument('-device', type=str, default='cpu', help='the compute device.')
 
     # model evaluation parameter
-    parser.add_argument('-eval_batch_size', type=int, default=512, help='the evaluation batch size.')
-    parser.add_argument('-wandb', type=str, default='False', help='enable wandb logging.')
+    parser.add_argument('-valid_iterations', type=int, default=5000, help='the eval training iteration.')
+    parser.add_argument('-valid_batch_size', type=int, default=1, help='the evaluation batch size.')
+    parser.add_argument('-wandb', type=str, default='True', help='enable wandb logging.')
 
-    # model anomaly detection parameter
+    # anomaly detection parameter
     parser.add_argument('-algo', type=str, default='hdbscan', help='the anomaly detection algorithm.') # lof, svm, iforest, hdbscan
-    parser.add_argument('-min_cluster_size', type=int, default=2, help='the hdbscan min cluster size.')
-    parser.add_argument('-min_samples', type=int, default=2, help='the hdbscan min samples.')
-    parser.add_argument('-metric', type=str, default='leaf', help='the hdbscan min samples.')
     parser.add_argument('-kernel', type=str, default='rbf', help='the one-class svm kernel.')
     parser.add_argument('-degree', type=int, default=3, help='the one-class svm degree of the polynomial kernel function.')
     parser.add_argument('-gamma', type=str, default='svm', help='the one-class svm kernel coefficient.')
     parser.add_argument('-n_neighbors', type=int, default=6, help='the number of LOF neighbors.')
     parser.add_argument('-leaf_size', type=int, default=30, help='the leaf size of LOF tree creation.')
+
+    # hdbscan grid search parameter
+    parser.add_argument('-grid_min_cluster_size', nargs='+', default=[10, 50, 100, 200, 300, 400, 500, 600], help='')
+    parser.add_argument('-grid_min_samples', nargs='+', default=[5, 10, 30, 50, 60, 100], help='')
+    parser.add_argument('-grid_metric', nargs='+', default=['euclidean', 'manhattan'], help='')
+    parser.add_argument('-grid_cluster_selection_method', nargs='+', default=['eom', 'leaf'], help='')
 
     # ignore potential warnings - mostly due to package updates
     warnings.filterwarnings('ignore')
@@ -95,6 +99,16 @@ def main():
     # parse integer array args as integer
     experiment_parameter['encoder_dim'] = [int(ele) for ele in experiment_parameter['encoder_dim']]
     experiment_parameter['decoder_dim'] = [int(ele) for ele in experiment_parameter['decoder_dim']]
+    experiment_parameter['grid_min_cluster_size'] = [int(ele) for ele in experiment_parameter['grid_min_cluster_size']]
+    experiment_parameter['grid_min_samples'] = [int(ele) for ele in experiment_parameter['grid_min_samples']]
+
+    # parse string array as string
+    experiment_parameter['grid_metric'] = [str(ele) for ele in experiment_parameter['grid_metric']]
+    experiment_parameter['grid_cluster_selection_method'] = [str(ele) for ele in experiment_parameter['grid_cluster_selection_method']]
+
+    # determine compute device
+    # determine hardware device
+    experiment_parameter['device'] = th.device("cuda:0" if th.cuda.is_available() else "cpu").type
 
     # set deterministic seeds of the client training experiments
     np.random.seed(int(experiment_parameter['seed']))  # set numpy seed
