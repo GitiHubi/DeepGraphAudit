@@ -28,20 +28,22 @@ class UtilsHandler(object):
         if architecture == 'ae_baseline':
 
             # create experiment directory name
-            experiment_directory_name = '{}_exp_{}_ds_{}_sd_{}_itr_{}_bt_{}_lr_{}_lt_{}_enc_{}_dec_{}_bn_{}_{}'.format(
-                str(param['exp_timestamp']), str(architecture), str(param['dataset']), str(param['seed']),
-                str(param['iterations']), str(param['train_batch_size']), str(param['learning_rate']), str(param['embed_dim']),
-                str(len(param['encoder_dim'])), str(len(param['decoder_dim'])), str(param['bottleneck']), str(param['exp_postfix'])
+            experiment_directory_name = '{}_exp_{}_ds_{}_sd_{}_ba_{}_itr_{}_bt_{}_lr_{}_fe_{}_le_{}_enc_{}_dec_{}_bn_{}_{}'.format(
+                str(param['exp_timestamp']), str(architecture), str(param['dataset']), str(param['seed']), str(param['beta']),
+                str(param['train_iterations']), str(param['train_batch_size']), str(param['learning_rate']), str(param['feat_embed_dim']),
+                str(param['lat_embed_dim']), str(len(param['encoder_dim'])), str(len(param['decoder_dim'])), str(param['encoder_bottleneck']),
+                str(param['exp_postfix'])
             )
 
         # case: gnn architecture
         if architecture == 'ae_graph':
 
             # create experiment directory name
-            experiment_directory_name = '{}_exp_{}_ds_{}_sd_{}_itr_{}_bt_{}_lr_{}_lt_{}_enc_{}_dec_{}_bn_{}_{}'.format(
-                str(param['exp_timestamp']), str(architecture), str(param['dataset']), str(param['seed']),
-                str(param['iterations']), str(param['train_batch_size']), str(param['learning_rate']), str(param['embed_dim']),
-                str(len(param['encoder_dim'])), str(len(param['decoder_dim'])), str(param['bottleneck']), str(param['exp_postfix'])
+            experiment_directory_name = '{}_exp_{}_ds_{}_sd_{}_ba_{}_itr_{}_bt_{}_lr_{}_fe_{}_le_{}_enc_{}_dec_{}_bn_{}_{}'.format(
+                str(param['exp_timestamp']), str(architecture), str(param['dataset']), str(param['seed']), str(param['beta']),
+                str(param['train_iterations']), str(param['train_batch_size']), str(param['learning_rate']), str(param['feat_embed_dim']),
+                str(param['lat_embed_dim']), str(len(param['encoder_dim'])), str(len(param['decoder_dim'])), str(param['encoder_bottleneck']),
+                str(param['exp_postfix'])
             )
 
         # case: potential additional architecture
