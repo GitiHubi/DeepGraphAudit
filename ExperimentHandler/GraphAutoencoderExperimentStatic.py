@@ -129,7 +129,7 @@ class GraphAutoencoderExperimentStatic(object):
             statistics=data_parameter
             , feat_embed_dim=parameter['feat_embed_dim']
             , encoder_dim=parameter['encoder_dim']
-            , bottleneck=parameter['bottleneck']
+            , bottleneck=parameter['encoder_bottleneck']
             , decoder_dim=parameter['decoder_dim']
             , device=parameter['device']
         ).to(parameter['device'])

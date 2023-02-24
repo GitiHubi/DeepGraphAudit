@@ -1,11 +1,8 @@
-# import python libraries
-import numpy as np
-
 # import pytorch libraries
 from torch.utils import data
 
 # define accounting dataset
-class AccountingGNNDataset(data.Dataset):
+class AccountingGNNDatasetDynamic(data.Dataset):
 
     # define class constructor
     def __init__(self, adj_matrices: list, feat_matrices: list):

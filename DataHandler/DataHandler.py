@@ -186,7 +186,7 @@ class DataHandler(object):
 
         # log configuration processing
         now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
-        print('[INFO {}] DataHandler :: {} transactional data of shape {} rows, {} columns, and belnr {}, successfully loaded.'.format(now, str(parameter['dataset']), str(original_entries.shape[0]), str(original_entries.shape[1]), str(len(original_entries['JEIdentifier'].unique()))))
+        print('[INFO {}] DataHandler :: {} transactional data of shape {} rows, {} columns, and belnr {}, successfully loaded.'.format(now, str(parameter['dataset']), str(original_entries.shape[0]), str(original_entries.shape[1]), str(len(original_entries['DocumentNr'].unique()))))
 
         ### Step 1: Filter large-scale automated postings ####################################################
 
@@ -261,7 +261,7 @@ class DataHandler(object):
 
         # log configuration processing
         now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
-        print('[INFO {}] DataHandler :: {} transactional data, {} adjacency matrices of {} rows x {} columns, {} feature matrices of {} rows x {} columns created.'.format(now, str(parameter['dataset']).upper(), str(adj_matrices.shape[0]), str(adj_matrices.shape[1]), str(adj_matrices.shape[2]), str(feat_matrices.shape[0]), str(feat_matrices.shape[1]), str(feat_matrices.shape[2])))
+        print('[INFO {}] DataHandler :: {} transactional data, {} adjacency matrices and {} feature matrices created.'.format(now, str(parameter['dataset']).upper(), str(len(adj_matrices)), str(len(feat_matrices))))
 
         # return original and encoded transactions
         return posting_ids, adj_matrices, feat_matrices, belnr_hkont_entries, belnr_entries, statistics
@@ -564,7 +564,7 @@ class DataHandler(object):
                 # create journal entry adjacency matrix of current journal entry
                 adj_matrix = self.fill_adjacency_matrix(je_identifier_field=statistics['je_identifier_field'], je_gl_account_code_field=statistics['je_gl_account_field'], je_debit_credit_field=statistics['je_debit_credit_field'], adj_matrix=adj_matrix, entries=adjacencies, posting_id=posting_id)
 
-                # add identity matrix to account adjacency matrix -> Todo: Update this dynamic adjacency matrices
+                # add identity matrix to account adjacency matrix
                 adj_matrix += np.identity(statistics['no_posting_accounts'])
 
                 # collect adjacency matrix -> nodes x nodes
@@ -732,11 +732,14 @@ class DataHandler(object):
         # determine current posting features
         posting_features = features[features[je_identifier_field] == posting_id]
 
+        # encode posting features accounts
+        posting_features['je_gl_account_encoding'] = pd.Categorical(posting_line_items[je_gl_account_code_field]).codes
+
         # iterate over posting accounts
         for account in posting_accounts:
 
             # determine current posting account features
-            posting_account_features = posting_features[posting_features[je_gl_account_code_field] == account]
+            posting_account_features = posting_features[posting_features['je_gl_account_encoding'] == account]
 
             # case: one-time account usage
             if posting_account_features.shape[0] == 1:
@@ -750,7 +753,8 @@ class DataHandler(object):
             # case: multiple-time account usage
             else:
 
-                print('Hello World! - shouldn`t happen since we did aggregate before...')
+                print('Hello World! - shouldn`t happen since we did aggregate before ...')
+                print('... but can happen due to incomplete postins -> check data quality.')
 
         # return feature matrix
         return feat_matrix
@@ -791,11 +795,8 @@ class DataHandler(object):
             # case: multiple-time account usage
             else:
 
-                print('Hello World! - shouldn`t happen since we did aggregate before...')
-
-        #if feat_matrix.shape[0] == 1:
-
-            # print('Hello World!')
+                print('Hello World! - shouldn`t happen since we did aggregate before ...')
+                print('... but can happen due to incomplete postins -> check data quality.')
 
         # return feature matrix
         return feat_matrix
