@@ -6,25 +6,19 @@ from torch import nn
 from ModelHandler.GraphConvLayer import GraphConvLayer
 
 # define encoder class
-class GNNEncoder(nn.Module):
+class GNNDecoderDynamic(nn.Module):
 
     # define class constructor
     def __init__(self, hidden_size, bottleneck, bias):
 
         # call super class constructor
-        super(GNNEncoder, self).__init__()
+        super(GNNDecoderDynamic, self).__init__()
 
         # init graph convolutional layers
         self.layers = self.init_layers(hidden_size, bias=bias)
 
         # init layer leaky relu non linear activations
         self.activations = nn.LeakyReLU(negative_slope=0.4, inplace=True)
-
-        # init VAE linear mu layer -> todo: fix double issue, think about keeping here
-        self.linear_mu = nn.Linear(hidden_size[-1], hidden_size[-1], bias=True).double()
-
-        # init VAE linear sigma layer -> todo: fix double issue, think about keeping here
-        self.linear_sigma = nn.Linear(hidden_size[-1], hidden_size[-1], bias=True).double()
 
         # case: linear bottleneck
         if bottleneck == 'linear':
@@ -40,6 +34,11 @@ class GNNEncoder(nn.Module):
         elif bottleneck == 'tanh':
 
             self.bottleneck = nn.Tanh()
+
+        # case: sigmoid bottleneck
+        elif bottleneck == 'sigmoid':
+
+            self.bottleneck = nn.Sigmoid()
 
     # init encoder layers
     def init_layers(self, layer_dimensions, bias):
@@ -80,14 +79,5 @@ class GNNEncoder(nn.Module):
                 # run forward pass through layer
                 x = self.bottleneck(self.layers[i](x, adj))
 
-        # aggregate over all accounts into one-dimensional vector
-        z = torch.sum(x, 1)
-
-        # run VAE linear mu layer
-        mu = self.linear_mu(z)
-
-        # run VAE linear sigma layer
-        sigma = self.linear_sigma(z)
-
         # return VAE mu and VAE sigma
-        return z, mu, sigma
+        return x

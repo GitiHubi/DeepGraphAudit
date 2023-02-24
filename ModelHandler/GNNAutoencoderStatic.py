@@ -1,19 +1,18 @@
 import torch
 import torch.nn as nn
-import scipy.optimize
 
 # import project libraries
 import ModelHandler.GNNEncoder as GNNEncoder
-import ModelHandler.GNNDecoder as GNNDecoder
+import ModelHandler.GNNDecoderStatic as GNNDecoderStatic
 
-# implement graph variational autoencoder neural network
-class GNNAutoencoder(nn.Module):
+# GNNAutoencoderStatic class
+class GNNAutoencoderStatic(nn.Module):
 
     # define class constructor
     def __init__(self, statistics, feat_embed_dim, encoder_dim, bottleneck, decoder_dim, bias=True, device='cpu'):
 
         # call super class constructor
-        super(GNNAutoencoder, self).__init__()
+        super(GNNAutoencoderStatic, self).__init__()
 
         # init dataset statistics
         self.statistics = statistics
@@ -22,13 +21,13 @@ class GNNAutoencoder(nn.Module):
         self.feat_embeddings = self.init_embedding_layers(feat_embed_dim)
 
         # init VAE feature embeddin non-linearity
-        self.feat_sigmoid = nn.Sigmoid()
+        # self.feat_sigmoid = nn.Sigmoid()
 
         # init graph VAE encoder model
         self.encoder = GNNEncoder.GNNEncoder(encoder_dim, bottleneck, bias)
 
         # init graph VAE decoder model
-        self.decoder = GNNDecoder.GNNDecoder(decoder_dim, bias)
+        self.decoder = GNNDecoderStatic.GNNDecoderStatic(decoder_dim, bias)
 
         # init embedding dimension
         self.device = device
@@ -150,7 +149,7 @@ class GNNAutoencoder(nn.Module):
             feat_matrices_embedding = self.feat_embeddings[i](feat_matrices_values)
 
             # determine non-linear embedding of current feature
-            feat_matrices_embedding = self.feat_sigmoid(feat_matrices_embedding)
+            # feat_matrices_embedding = self.feat_sigmoid(feat_matrices_embedding)
 
             # case: initial feature
             if i == 0:

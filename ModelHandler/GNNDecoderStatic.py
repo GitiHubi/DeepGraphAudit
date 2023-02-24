@@ -1,15 +1,14 @@
 # import pytorch libraries
-import torch
 from torch import nn
 
 # define decoder class
-class GNNDecoder(nn.Module):
+class GNNDecoderStatic(nn.Module):
 
     # define class constructor
     def __init__(self, decoder_dim, bias):
 
         # call super class constructor
-        super(GNNDecoder, self).__init__()
+        super(GNNDecoderStatic, self).__init__()
 
         # init decoder architecture
         self.layers = self.init_layers(decoder_dim[:-2], bias=bias)
