@@ -32,7 +32,7 @@ class LoggingHandler(object):
         self.wandb_run = {}
 
     # init experiment logging
-    def init_experiment_log(self, parameter, file_name):
+    def init_experiment_log(self, parameter, directory, file_name):
 
         # init experiment statistics
         summary_cols = [
@@ -44,9 +44,10 @@ class LoggingHandler(object):
             , 'learning_rate_iteration'
             , 'beta'
             , 'encoder_dim'
+            , 'encoder_bottleneck'
             , 'decoder_dim'
+            , 'decoder_bottleneck'
             , 'lat_embed_dim'
-            , 'bottleneck'
             , 'no_accounts'
             , 'feat_embed_dim'
             , 'no_features'
@@ -67,10 +68,10 @@ class LoggingHandler(object):
         self.experiment_log = pd.DataFrame(columns=summary_cols)
 
         # save current experiment statistics
-        self.experiment_log.to_csv(os.path.join(parameter['sta_sub_dir'], file_name), sep=',', encoding='utf-8')
+        self.experiment_log.to_csv(os.path.join(directory, file_name), sep=',', encoding='utf-8')
 
     # save experiment statistics
-    def save_experiment_log(self, parameter, experiment_statistics, file_name):
+    def save_experiment_log(self, parameter, experiment_statistics, directory, file_name):
 
         # collect experiment statistics
         exp_stats = {
@@ -82,9 +83,10 @@ class LoggingHandler(object):
             , 'learning_rate_iteration': experiment_statistics['learning_rate']
             , 'beta': parameter['beta']
             , 'encoder_dim': parameter['encoder_dim']
+            , 'encoder_bottleneck': parameter['encoder_bottleneck']
             , 'decoder_dim': parameter['decoder_dim']
+            , 'decoder_bottleneck': parameter['decoder_bottleneck']
             , 'lat_embed_dim': parameter['lat_embed_dim']
-            , 'bottleneck': parameter['bottleneck']
             , 'no_accounts': int(experiment_statistics['no_accounts'])
             , 'feat_embed_dim': parameter['feat_embed_dim']
             , 'no_features': int(experiment_statistics['no_features'])
@@ -108,7 +110,7 @@ class LoggingHandler(object):
         self.experiment_log = self.experiment_log.append(exp_stats, ignore_index=True)
 
         # save current experiment statistics
-        self.experiment_log.to_csv(os.path.join(parameter['sta_sub_dir'], file_name), sep=',', encoding='utf-8')
+        self.experiment_log.to_csv(os.path.join(directory, file_name), sep=',', encoding='utf-8')
 
     # init wandb logging
     def init_wandb_run(self, project, parameter):
@@ -127,9 +129,10 @@ class LoggingHandler(object):
         # model architecture parameter
         wandb_parameter['seed'] = parameter['seed']
         wandb_parameter['encoder_dim'] = parameter['encoder_dim']
-        wandb_parameter['decoder_dim'] = parameter['decoder_dim']
+        wandb_parameter['encoder_bottleneck'] = parameter['encoder_bottleneck']
         wandb_parameter['encoder_type'] = parameter['encoder_type']
-        wandb_parameter['bottleneck'] = parameter['bottleneck']
+        wandb_parameter['decoder_dim'] = parameter['decoder_dim']
+        wandb_parameter['decoder_bottleneck'] = parameter['decoder_bottleneck']
         wandb_parameter['feat_embed_dim'] = parameter['feat_embed_dim']
         wandb_parameter['lat_embed_dim'] = parameter['lat_embed_dim']
 
