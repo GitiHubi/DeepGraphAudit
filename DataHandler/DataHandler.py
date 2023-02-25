@@ -20,12 +20,16 @@ import itertools as it
 # import sklearn
 from sklearn.preprocessing import LabelEncoder
 
+# import project libraries
+from AnomalyHandler import AnomalyHandler
+
 # class DataHandler
 class DataHandler(object):
 
     def __init__(self):
 
-        pass
+        # init anomaly handler
+        self.aha = AnomalyHandler.AnomalyHandler()
 
     def get_ernstyoung_data_range(self, parameter):
 
@@ -127,6 +131,9 @@ class DataHandler(object):
 
         # combine pre-processed categorical and numerical attributes
         processed_detailed_entries = pd.concat([processed_detailed_entries, processed_detailed_cat_entries, processed_detailed_num_entries], axis=1)
+
+        # create global graph anomalies
+        original_entries_anomalies = self.aha.generate_global_graph_anomalies_ey(statistics=statistics, entries=processed_detailed_entries, n=10, seed=parameter['seed'])
 
         ### Step 2: Encode general ledger account attribute #####################################################
 
