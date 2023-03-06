@@ -21,7 +21,9 @@ import torch as th
 # import project libraries
 from UtilsHandler import UtilsHandler
 # from ExperimentHandler import AutoencoderExperiment
-from ExperimentHandler import GraphAutoencoderExperiment
+from ExperimentHandler import GraphAutoencoderExperimentStatic
+from GridSearchHandler import GridSearchHandler
+from ExperimentHandler import GraphAutoencoderExperimentDynamic
 
 # define main function
 def main():
@@ -34,43 +36,49 @@ def main():
     parser.add_argument('-experiment', help='', nargs='?', type=str,  default='graph_autoencoder')
     parser.add_argument('-data_dir', help='', nargs='?', type=str, default='./100_datasets')
     parser.add_argument('-base_dir', help='', nargs='?', type=str, default='./200_experiments')
-    parser.add_argument('-exp_postfix', type=str, default='poc', help='postfix of experimental runs.')
-    parser.add_argument('-exp_mode', type=str, default='dynamic', help='postfix of experimental runs.')  # complete dynamic
+    parser.add_argument('-exp_postfix', type=str, default='test', help='postfix of experimental runs.')
+    parser.add_argument('-mode', type=str, default='dynamic', help='general experiment mode.')  # static, dynamic
+    parser.add_argument('-grid', type=str, default='True', help='grid experiment mode.')  # static, dynamic
 
     # data parameter
-    parser.add_argument('-dataset', help='', nargs='?', type=str,  default='ey') # ey, serpro, sap
+    parser.add_argument('-dataset', help='', nargs='?', type=str,  default='sap') # ey, serpro, sap
     parser.add_argument('-sample_eval', help='', nargs='?', type=str, default='False')
-    parser.add_argument('-sample_size', help='', nargs='?', type=int, default=2002)
+    parser.add_argument('-sample_size', help='', nargs='?', type=int, default=501)
     parser.add_argument('-min_line_items', help='', nargs='?', type=int, default=2)
     parser.add_argument('-max_line_items', help='', nargs='?', type=int, default=20)
 
     # model architecture parameter
     parser.add_argument('-seed', type=int, default=1111, help='seed value for deterministic results.')
-    parser.add_argument('-encoder_dim', nargs='+', default=[16, 8, 4, 2], help='the dimensions of the encoder gnn layers.') # [128, 64, 32, 16, 8, 4, 2]
-    parser.add_argument('-decoder_dim', nargs='+', default=[2, 4, 8, 16], help='the dimensions of the decoder fc layers.') # [2, 4, 8, 16, 32, 64, 128]
-    parser.add_argument('-encoder_type', type=str, default='embed', help='the type of feature encoding') # onehot, embed
-    parser.add_argument('-bottleneck', type=str, default='linear', help='the bottleneck non-linearity.') # linear, tanh, lrelu
-    parser.add_argument('-feat_embed_dim', type=int, default=2, help='the feature dimension of the graph embeddings.')
+    parser.add_argument('-encoder_dim', nargs='+', default=[128, 64, 32, 16, 8, 4, 2], help='the dimensions of the encoder gnn layers.')  # [128, 64, 32, 16, 8, 4, 2]
+    parser.add_argument('-decoder_dim', nargs='+', default=[2, 4, 8, 16, 32, 64, 128], help='the dimensions of the decoder fc layers.')  # [2, 4, 8, 16, 32, 64, 128]
+    parser.add_argument('-encoder_type', type=str, default='embed', help='the type of feature encoding')  # onehot, embed
+    parser.add_argument('-encoder_bottleneck', type=str, default='tanh', help='the bottleneck non-linearity.')  # linear, tanh, lrelu
+    parser.add_argument('-decoder_bottleneck', type=str, default='sigmoid', help='the bottleneck non-linearity.')  # linear, tanh, lrelu
+    parser.add_argument('-feat_embed_dim', type=int, default=12, help='the feature dimension of the graph embeddings.')
     parser.add_argument('-lat_embed_dim', type=int, default=2, help='the dimension of the graph embeddings.')
 
     # model training parameter
-    parser.add_argument('-train_iterations', type=int, default=100001, help='the number of training iterations.')
-    parser.add_argument('-train_batch_size', type=int, default=1, help='the training batch size.')
-    parser.add_argument('-loss', type=str, default='mse', help='the training and validation loss.') #mse, bce
-    parser.add_argument('-learning_rate', type=float, default=0.01, help='the learning rate.')
-    parser.add_argument('-learning_rate_steps', type=int, default=2, help='the learning rate steps.')
+    parser.add_argument('-train_iterations', type=int, default=10001, help='the number of training iterations.')
+    parser.add_argument('-train_batch_size', type=int, default=64, help='the training batch size.')
+    parser.add_argument('-loss', type=str, default='mse', help='the training and validation loss.')  # mse, bce
+    parser.add_argument('-learning_rate', type=float, default=0.0001, help='the learning rate.')
+    parser.add_argument('-learning_rate_steps', type=int, default=3, help='the learning rate steps.')
     parser.add_argument('-weight_decay', nargs='?', type=float, default=1e-6, help='the optimizer weight decay.')
     parser.add_argument('-kl_div_alpha', type=float, default=0.0, help='the kl-divergence loss regularizer.')
     parser.add_argument('-beta', type=float, default=0.5, help='the loss regularizer.')
-    parser.add_argument('-device', type=str, default='cpu', help='the compute device.')
 
     # model evaluation parameter
-    parser.add_argument('-valid_iterations', type=int, default=5000, help='the eval training iteration.')
-    parser.add_argument('-valid_batch_size', type=int, default=1, help='the evaluation batch size.')
+    parser.add_argument('-valid_iterations', type=int, default=1000, help='the eval training iteration.')
+    parser.add_argument('-valid_batch_size', type=int, default=64, help='the evaluation batch size.')
     parser.add_argument('-wandb', type=str, default='True', help='enable wandb logging.')
 
+    # model grid search parameter
+    parser.add_argument('-grid_seed', nargs='+', default=[1111], help='the grid search seed.') # 2222, 3333, 4444, 1234
+    parser.add_argument('-grid_feat_embed_dim', nargs='+', default=[2, 4, 8, 12], help='the grid search seed.')
+    parser.add_argument('-grid_beta', nargs='+', default=[0.5, 0.1], help='the grid search seed.')
+
     # anomaly detection parameter
-    parser.add_argument('-algo', type=str, default='hdbscan', help='the anomaly detection algorithm.') # lof, svm, iforest, hdbscan
+    parser.add_argument('-algo', type=str, default='lof', help='the anomaly detection algorithm.') # lof, svm, iforest, hdbscan
     parser.add_argument('-kernel', type=str, default='rbf', help='the one-class svm kernel.')
     parser.add_argument('-degree', type=int, default=3, help='the one-class svm degree of the polynomial kernel function.')
     parser.add_argument('-gamma', type=str, default='svm', help='the one-class svm kernel coefficient.')
@@ -93,21 +101,26 @@ def main():
     uha = UtilsHandler.UtilsHandler()
 
     # parse boolean args as boolean
+    experiment_parameter['grid'] = uha.str2bool(experiment_parameter['grid'])
     experiment_parameter['sample_eval'] = uha.str2bool(experiment_parameter['sample_eval'])
     experiment_parameter['wandb'] = uha.str2bool(experiment_parameter['wandb'])
 
-    # parse integer array args as integer
+    # parse integer array args as integers
     experiment_parameter['encoder_dim'] = [int(ele) for ele in experiment_parameter['encoder_dim']]
     experiment_parameter['decoder_dim'] = [int(ele) for ele in experiment_parameter['decoder_dim']]
+    experiment_parameter['grid_seed'] = [int(ele) for ele in experiment_parameter['grid_seed']]
+    experiment_parameter['grid_feat_embed_dim'] = [int(ele) for ele in experiment_parameter['grid_feat_embed_dim']]
     experiment_parameter['grid_min_cluster_size'] = [int(ele) for ele in experiment_parameter['grid_min_cluster_size']]
     experiment_parameter['grid_min_samples'] = [int(ele) for ele in experiment_parameter['grid_min_samples']]
+
+    # parse float array as floats
+    experiment_parameter['grid_beta'] = [float(ele) for ele in experiment_parameter['grid_beta']]
 
     # parse string array as string
     experiment_parameter['grid_metric'] = [str(ele) for ele in experiment_parameter['grid_metric']]
     experiment_parameter['grid_cluster_selection_method'] = [str(ele) for ele in experiment_parameter['grid_cluster_selection_method']]
 
     # determine compute device
-    # determine hardware device
     experiment_parameter['device'] = th.device("cuda:0" if th.cuda.is_available() else "cpu").type
 
     # set deterministic seeds of the client training experiments
@@ -138,6 +151,8 @@ def main():
             data_parameter['je_line_item_field'] = 'Y_JE_ITEM_IDENTIFIER'
             data_parameter['je_gl_account_field'] = 'Y_GL_ACCOUNT_NUMBER'
             data_parameter['je_debit_credit_field'] = 'Y_DEBIT_CREDIT'
+            data_parameter['je_class_field'] = 'Y_CLASS'
+            data_parameter['je_class_name_field'] = 'Y_CLASS_NAME'
 
             # set journal entry attribute information
             data_parameter['je_header_attributes'] = ['JEIdentifier', 'Source', 'PreparerID']
@@ -153,7 +168,7 @@ def main():
             data_parameter['je_segment_features'] = data_parameter['je_segment_features_categorical'] + data_parameter['je_segment_features_numerical']
 
             # set the visualization features
-            data_parameter['hover_attributes'] = ['Y_JE_IDENTIFIER', 'Y_JE_ITEM_IDENTIFIER', 'Y_GL_ACCOUNT_TYPE', 'Y_GL_ACCOUNT_CLASS', 'Y_GL_ACCOUNT_NAME', 'Y_PREPARER_ID', 'Y_SOURCE', 'Y_DMBTR']
+            data_parameter['hover_attributes'] = ['Y_JE_IDENTIFIER', 'Y_JE_ITEM_IDENTIFIER', 'Y_GL_ACCOUNT_TYPE', 'Y_GL_ACCOUNT_CLASS', 'Y_GL_ACCOUNT_NAME', 'Y_PREPARER_ID', 'Y_SOURCE', 'Y_DMBTR', 'Y_CLASS_NAME']
             data_parameter['visual_attributes'] = ['Y_BUZEI', 'Y_PREPARER_ID', 'Y_SOURCE', 'Y_ACCOUNT_TYPE', 'Y_ACCOUNT_CLASS', 'Y_GL_ACCOUNT_NAME', 'Y_DMBTR']
 
         # case: sap dataset
@@ -170,6 +185,8 @@ def main():
             data_parameter['je_line_item_field'] = 'Y_JE_ITEM_IDENTIFIER'
             data_parameter['je_gl_account_field'] = 'Y_HKONT'
             data_parameter['je_debit_credit_field'] = 'Y_DEBIT_CREDIT'
+            data_parameter['je_class_field'] = 'Y_CLASS'
+            data_parameter['je_class_name_field'] = 'Y_CLASS_NAME'
 
             # set journal entry attribute information
             data_parameter['je_header_attributes'] = ['DocumentNr', 'DocType', 'DocTypeDescr', 'UserName Post', 'TransactionDescription']
@@ -185,14 +202,38 @@ def main():
             data_parameter['je_segment_features'] = data_parameter['je_segment_features_categorical'] + data_parameter['je_segment_features_numerical']
 
             # set the visualization features
-            data_parameter['hover_attributes'] = ['Y_BELNR', 'Y_JE_ITEM_IDENTIFIER', 'Y_BLART', 'Y_USNAM', 'Y_TCODE', 'Y_BSCHL', 'Y_HKONT_TEXT', 'Y_DMBTR', 'Y_PRCTR', 'Y_KOSTL']
+            data_parameter['hover_attributes'] = ['Y_BELNR', 'Y_JE_ITEM_IDENTIFIER', 'Y_BLART', 'Y_USNAM', 'Y_TCODE', 'Y_BSCHL', 'Y_HKONT_TEXT', 'Y_DMBTR', 'Y_PRCTR', 'Y_KOSTL', 'Y_CLASS_NAME']
             data_parameter['visual_attributes'] = ['Y_JE_ITEM_IDENTIFIER', 'Y_USNAM', 'Y_BLART', 'Y_TCODE', 'Y_BSCHL', 'Y_HKONT_TEXT', 'Y_DMBTR', 'Y_PRCTR', 'Y_KOSTL']
 
-        # init graph autoencoder experiment
-        exp = GraphAutoencoderExperiment.GraphAutoencoderExperiment()
+        # case: GNN experiment using full adjacency and feature matrices
+        if experiment_parameter['mode'] == 'static':
 
-        # run graph autoencoder experiment
-        exp.run_experiement(parameter=experiment_parameter, data_parameter=data_parameter)
+            # init regular GNN experiment
+            exp = GraphAutoencoderExperimentStatic.GraphAutoencoderExperimentStatic()
+
+            # run regular GNN experiment
+            exp.run_experiement(parameter=experiment_parameter, data_statistics=data_parameter)
+
+        # case: GNN experiment using dynamic adjacency and feature matrices
+        elif experiment_parameter['mode'] == 'dynamic':
+
+            # case: grid search enabled
+            if experiment_parameter['grid'] == True:
+
+                # init dynamic GNN grid experiment
+                exp = GridSearchHandler.GridSearchHandler()
+
+                # run dynamic grid search GNN experiment
+                _ = exp.run_grid_search_experiment(parameter=experiment_parameter, data_statistics=data_parameter)
+
+            # case: non-grid search enabled
+            else:
+
+                # init dynamic GNN experiment
+                exp = GraphAutoencoderExperimentDynamic.GraphAutoencoderExperimentDynamic()
+
+                # run dynamic GNN experiment
+                _ = exp.run_experiement(parameter=experiment_parameter, data_statistics=data_parameter)
 
 # run main function
 if __name__ == '__main__':
