@@ -38,6 +38,10 @@ class LoggingHandler(object):
         summary_cols = [
             'timestamp'
             , 'seed'
+            , 'no_journal_entries'
+            , 'no_accounts'
+            , 'no_global_anomalies'
+            , 'no_local_anomalies'
             , 'train_iterations'
             , 'batch_size'
             , 'learning_rate_start'
@@ -48,7 +52,6 @@ class LoggingHandler(object):
             , 'decoder_dim'
             , 'decoder_bottleneck'
             , 'lat_embed_dim'
-            , 'no_accounts'
             , 'feat_embed_dim'
             , 'no_features'
             , 'train_loss'
@@ -58,12 +61,27 @@ class LoggingHandler(object):
             , 'valid_adj_loss'
             , 'valid_fea_loss'
             , 'algo'
+            , 'best_n_neighbors'
+            , 'best_leaf_size'
             , 'best_min_cluster_size'
             , 'best_min_samples'
             , 'best_metric'
             , 'best_cluster_selection_method'
-            , 'no_global_anomalies'
-            , 'no_local_anomalies'
+            , 'no_detected_clusters'
+            , 'no_detected_global_anomalies'
+            , 'no_detected_local_anomalies'
+            , 'error_roc_auc_all'
+            , 'error_roc_auc_global'
+            , 'error_roc_auc_local'
+            , 'density_roc_auc_all'
+            , 'density_roc_auc_global'
+            , 'density_roc_auc_local'
+            , 'error_pr_auc_all'
+            , 'error_pr_auc_global'
+            , 'error_pr_auc_local'
+            , 'density_pr_auc_all'
+            , 'density_pr_auc_global'
+            , 'density_pr_auc_local'
         ]
         self.experiment_log = pd.DataFrame(columns=summary_cols)
 
@@ -77,6 +95,10 @@ class LoggingHandler(object):
         exp_stats = {
             'timestamp': str(dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S'))
             , 'seed': parameter['seed']
+            , 'no_journal_entries': int(experiment_statistics['no_journal_entries'])
+            , 'no_accounts': int(experiment_statistics['no_accounts'])
+            , 'no_global_anomalies': int(parameter['no_global_anomalies'])
+            , 'no_local_anomalies': int(parameter['no_local_anomalies'])
             , 'train_iterations': parameter['train_iterations']
             , 'batch_size': parameter['train_batch_size']
             , 'learning_rate_start': parameter['learning_rate']
@@ -87,7 +109,6 @@ class LoggingHandler(object):
             , 'decoder_dim': parameter['decoder_dim']
             , 'decoder_bottleneck': parameter['decoder_bottleneck']
             , 'lat_embed_dim': parameter['lat_embed_dim']
-            , 'no_accounts': int(experiment_statistics['no_accounts'])
             , 'feat_embed_dim': parameter['feat_embed_dim']
             , 'no_features': int(experiment_statistics['no_features'])
             , 'train_loss': np.round(experiment_statistics['average_train_loss'], 6)
@@ -97,13 +118,27 @@ class LoggingHandler(object):
             , 'valid_adj_loss': np.round(experiment_statistics['average_adj_valid_loss'], 6)
             , 'valid_fea_loss': np.round(experiment_statistics['average_fea_valid_loss'], 6)
             , 'algo': parameter['algo']
-            , 'best_min_cluster_size': parameter['min_cluster_size']
-            , 'best_min_samples': parameter['min_samples']
-            , 'best_metric': parameter['metric']
-            , 'best_cluster_selection_method': parameter['cluster_selection_method']
-            , 'no_clusters': int(experiment_statistics['no_clusters'])
-            , 'no_global_anomalies': int(experiment_statistics['no_global_anomalies'])
-            , 'no_local_anomalies': int(experiment_statistics['no_local_anomalies'])
+            , 'best_n_neighbors': parameter['best_n_neighbors']
+            , 'best_leaf_size': parameter['best_leaf_size']
+            , 'best_min_cluster_size': parameter['best_min_cluster_size']
+            , 'best_min_samples': parameter['best_min_samples']
+            , 'best_metric': parameter['best_metric']
+            , 'best_cluster_selection_method': parameter['best_cluster_selection_method']
+            , 'no_detected_clusters': int(experiment_statistics['no_detected_clusters'])
+            , 'no_detected_global_anomalies': int(experiment_statistics['no_detected_global_anomalies'])
+            , 'no_detected_local_anomalies': int(experiment_statistics['no_detected_local_anomalies'])
+            , 'error_roc_auc_all': np.round(experiment_statistics['error_roc_auc_all'], 6)
+            , 'error_roc_auc_global': np.round(experiment_statistics['error_roc_auc_global'], 6)
+            , 'error_roc_auc_local': np.round(experiment_statistics['error_roc_auc_local'], 6)
+            , 'density_roc_auc_all': np.round(experiment_statistics['density_roc_auc_all'], 6)
+            , 'density_roc_auc_global': np.round(experiment_statistics['density_roc_auc_global'], 6)
+            , 'density_roc_auc_local': np.round(experiment_statistics['density_roc_auc_local'], 6)
+            , 'error_pr_auc_all': np.round(experiment_statistics['error_pr_auc_all'], 6)
+            , 'error_pr_auc_global': np.round(experiment_statistics['error_pr_auc_global'], 6)
+            , 'error_pr_auc_local': np.round(experiment_statistics['error_pr_auc_local'], 6)
+            , 'density_pr_auc_all': np.round(experiment_statistics['density_pr_auc_all'], 6)
+            , 'density_pr_auc_global': np.round(experiment_statistics['density_pr_auc_global'], 6)
+            , 'density_pr_auc_local': np.round(experiment_statistics['density_pr_auc_local'], 6)
         }
 
         # determine and collect training summary statistics of current epoch
@@ -162,11 +197,31 @@ class LoggingHandler(object):
     # update wandb logging
     def update_wandb_run(self, statistics):
 
-        # fill wandb log dict
+        # log training losses
         self.wandb_log['001_model_training/001_avg_train_loss'] = statistics['average_train_loss']
         self.wandb_log['001_model_training/002_avg_adj_train_loss'] = statistics['average_adj_train_loss']
         self.wandb_log['001_model_training/003_avg_fea_train_loss'] = statistics['average_fea_train_loss']
         self.wandb_log['001_model_training/004_learning_rate'] = statistics['learning_rate']
+
+        # log anomaly detection error roc auc
+        self.wandb_log['002_anomaly_detection_roc_auc/001_error_roc_auc_all'] = statistics['error_roc_auc_all']
+        self.wandb_log['002_anomaly_detection_roc_auc/002_error_roc_auc_global'] = statistics['error_roc_auc_global']
+        self.wandb_log['002_anomaly_detection_roc_auc/003_error_roc_auc_local'] = statistics['error_roc_auc_local']
+
+        # log anomaly detection error pr auc
+        self.wandb_log['003_anomaly_detection_pr_auc/001_error_pr_auc_all'] = statistics['error_pr_auc_all']
+        self.wandb_log['003_anomaly_detection_pr_auc/002_error_pr_auc_global'] = statistics['error_pr_auc_global']
+        self.wandb_log['003_anomaly_detection_pr_auc/003_error_pr_auc_local'] = statistics['error_pr_auc_local']
+
+        # log anomaly detection density pr auc
+        self.wandb_log['002_anomaly_detection_roc_auc/004_density_roc_auc_all'] = statistics['density_roc_auc_all']
+        self.wandb_log['002_anomaly_detection_roc_auc/005_density_roc_auc_global'] = statistics['density_roc_auc_global']
+        self.wandb_log['002_anomaly_detection_roc_auc/006_density_roc_auc_local'] = statistics['density_roc_auc_local']
+
+        # log anomaly detection density pr auc
+        self.wandb_log['003_anomaly_detection_pr_auc/004_density_pr_auc_all'] = statistics['density_pr_auc_all']
+        self.wandb_log['003_anomaly_detection_pr_auc/005_density_pr_auc_global'] = statistics['density_pr_auc_global']
+        self.wandb_log['003_anomaly_detection_pr_auc/006_density_pr_auc_local'] = statistics['density_pr_auc_local']
 
         # log training progress
         self.wandb_run.log(self.wandb_log)
@@ -175,19 +230,44 @@ class LoggingHandler(object):
     def close_wandb_run(self, parameter, statistics):
 
         # log dataset statistics
+        self.wandb_run.summary['no_journal_entries'] = statistics['no_journal_entries']
         self.wandb_run.summary['no_accounts'] = statistics['no_accounts']
+        self.wandb_run.summary['no_global_anomalies'] = int(parameter['no_global_anomalies'])
+        self.wandb_run.summary['no_local_anomalies'] = int(parameter['no_local_anomalies'])
         self.wandb_run.summary['no_features'] = statistics['no_features']
 
         # log best clustering parameters
-        self.wandb_run.summary['best_min_cluster_size'] = parameter['min_cluster_size']
-        self.wandb_run.summary['best_min_samples'] = parameter['min_samples']
-        self.wandb_run.summary['best_metric'] = parameter['metric']
-        self.wandb_run.summary['best_cluster_selection_method'] = parameter['cluster_selection_method']
+        self.wandb_run.summary['best_n_neighbors'] = parameter['best_n_neighbors']
+        self.wandb_run.summary['best_leaf_size'] = parameter['best_leaf_size']
+        self.wandb_run.summary['best_min_cluster_size'] = parameter['best_min_cluster_size']
+        self.wandb_run.summary['best_min_samples'] = parameter['best_min_samples']
+        self.wandb_run.summary['best_metric'] = parameter['best_metric']
+        self.wandb_run.summary['best_cluster_selection_method'] = parameter['best_cluster_selection_method']
 
         # log clustering results
-        self.wandb_run.summary['no_clusters'] = statistics['no_clusters']
-        self.wandb_run.summary['no_global_anomalies'] = statistics['no_global_anomalies']
-        self.wandb_run.summary['no_local_anomalies'] = statistics['no_local_anomalies']
+        self.wandb_run.summary['no_detected_clusters'] = statistics['no_detected_clusters']
+        self.wandb_run.summary['no_detected_global_anomalies'] = statistics['no_detected_global_anomalies']
+        self.wandb_run.summary['no_detected_local_anomalies'] = statistics['no_detected_local_anomalies']
+
+        # log roc error results
+        self.wandb_run.summary['error_roc_auc_all'] = statistics['error_roc_auc_all']
+        self.wandb_run.summary['error_roc_auc_global'] = statistics['error_roc_auc_global']
+        self.wandb_run.summary['error_roc_auc_local'] = statistics['error_roc_auc_local']
+
+        # log precision recall error results
+        self.wandb_run.summary['error_pr_auc_all'] = statistics['error_pr_auc_all']
+        self.wandb_run.summary['error_pr_auc_global'] = statistics['error_pr_auc_global']
+        self.wandb_run.summary['error_pr_auc_local'] = statistics['error_pr_auc_local']
+
+        # log roc density results
+        self.wandb_run.summary['density_roc_auc_all'] = statistics['density_roc_auc_all']
+        self.wandb_run.summary['density_roc_auc_global'] = statistics['density_roc_auc_global']
+        self.wandb_run.summary['density_roc_auc_local'] = statistics['density_roc_auc_local']
+
+        # log precision recall density results
+        self.wandb_run.summary['density_pr_auc_all'] = statistics['density_pr_auc_all']
+        self.wandb_run.summary['density_pr_auc_global'] = statistics['density_pr_auc_global']
+        self.wandb_run.summary['density_pr_auc_local'] = statistics['density_pr_auc_local']
 
         # finish wandb run
         self.wandb_run.finish()
