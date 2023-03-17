@@ -67,9 +67,10 @@ class UtilsHandler(object):
         res_sub_dir = self.create_experiment_sub_directory(parent_dir=exp_dir, folder_name='02_results')
         vis_sub_dir = self.create_experiment_sub_directory(parent_dir=exp_dir, folder_name='03_visuals')
         log_sub_dir = self.create_experiment_sub_directory(parent_dir=exp_dir, folder_name='04_logging')
+        gra_sub_dir = self.create_experiment_sub_directory(parent_dir=exp_dir, folder_name='05_graphs')
 
         # return new experiment directory and sub directories
-        return exp_dir, par_sub_dir, sta_sub_dir, res_sub_dir, vis_sub_dir, log_sub_dir
+        return exp_dir, par_sub_dir, sta_sub_dir, res_sub_dir, vis_sub_dir, log_sub_dir, gra_sub_dir
 
     # create experiment sub-directories
     def create_experiment_sub_directory(self, parent_dir, folder_name):
