@@ -12,27 +12,17 @@ print("NUMBER OF THREADS ARE LIMITED NOW ...")
 # import additional python libraries
 import datetime as dt
 import numpy as np
-import pandas as pd
 from tqdm import tqdm
 
 # import pytorch libraries
 import torch as th
 from torch.utils.data import DataLoader
 
-# import scikit learn libraries
-from sklearn.svm import OneClassSVM
-from sklearn.neighbors import LocalOutlierFactor
-from sklearn.ensemble import IsolationForest
-
-from sklearn.metrics import make_scorer
-from sklearn.model_selection import RandomizedSearchCV
-
-# import hdbscan library
-import hdbscan
-
 # import project libraries
 from UtilsHandler import UtilsHandler
 from DataHandler import DataHandler
+from AnomalyHandler import AnomalyHandler
+from EvaluationHandler import EvaluationHandler
 from DataHandler.AccountingGNNDatasetDynamic import AccountingGNNDatasetDynamic
 from ModelHandler import GNNAutoencoderDynamic
 from VisualisationHandler import VisualisationHandler
@@ -50,23 +40,29 @@ class GraphAutoencoderExperimentDynamic(object):
         # init data handler
         self.dha = DataHandler.DataHandler()
 
+        # init evaluation handler
+        self.eha = EvaluationHandler.EvaluationHandler()
+
+        # init anomaly handler
+        self.aha = AnomalyHandler.AnomalyHandler()
+
         # init visualization handler
-        self.vha = VisualisationHandler.VisualizationHandler()
+        self.vha = VisualisationHandler.VisualisationHandler()
 
         # init logging handler
         self.lha = LoggingHandler.LoggingHandler()
 
     # run graph autoencoder experiment
-    def run_experiement(self, parameter, data_parameter):
+    def run_experiement(self, parameter, data_statistics):
 
         # case: wandb logging enabled
         if parameter['wandb']:
 
             # init wandb logging
-            self.lha.init_wandb_run(project='DeepAppleGNN', parameter=parameter)
+            self.lha.init_wandb_run(project='DeepAppleGNN_{}_{}'.format(str(parameter['exp_series']).zfill(3), str(parameter['dataset'])), parameter=parameter)
 
         # create experiment directory
-        parameter['exp_dir'], parameter['par_sub_dir'], parameter['sta_sub_dir'], parameter['res_sub_dir'], parameter['vis_sub_dir'], parameter['log_sub_dir'] = self.uha.create_experiment_directory(param=parameter, parent_dir=parameter['base_dir'], architecture='ae_graph')
+        parameter['exp_dir'], parameter['par_sub_dir'], parameter['sta_sub_dir'], parameter['res_sub_dir'], parameter['vis_sub_dir'], parameter['log_sub_dir'], parameter['gra_sub_dir'] = self.uha.create_experiment_directory(param=parameter, parent_dir=parameter['base_dir'], architecture='ae_graph')
 
         # save experiment parameters
         self.uha.save_experiment_parameter(param=parameter, parameter_dir=parameter['par_sub_dir'])
@@ -82,19 +78,19 @@ class GraphAutoencoderExperimentDynamic(object):
         if parameter['dataset'] == 'ey':
 
             # load the EY training data
-            posting_ids, adj_matrices, feat_matrices, aggregated_entries_belnr_hkont, aggregated_entries_belnr, data_parameter = self.dha.get_gnn_data_range_ey(parameter=parameter, statistics=data_parameter)
+            posting_ids, adj_matrices, feat_matrices, aggregated_entries_belnr_hkont, aggregated_entries_belnr, data_statistics = self.dha.get_gnn_data_range_ey(parameter=parameter, statistics=data_statistics)
 
         # case: serpro dataset
         elif parameter['dataset'] == 'serpro':
 
             # load the Serpro training data
-            posting_ids, adj_matrices, feat_matrices, aggregated_entries, data_parameter = self.dha.get_gnn_data_range_serpro(parameter=parameter, statistics=data_parameter)
+            posting_ids, adj_matrices, feat_matrices, aggregated_entries, data_statistics = self.dha.get_gnn_data_range_serpro(parameter=parameter, statistics=data_statistics)
 
         # case: sap dataset
         elif parameter['dataset'] == 'sap':
 
             # load the Serpro training data
-            posting_ids, adj_matrices, feat_matrices, aggregated_entries_belnr_hkont, aggregated_entries_belnr, data_parameter = self.dha.get_gnn_data_range_sap(parameter=parameter, statistics=data_parameter)
+            posting_ids, adj_matrices, feat_matrices, aggregated_entries_belnr_hkont, aggregated_entries_belnr, data_statistics = self.dha.get_gnn_data_range_sap(parameter=parameter, statistics=data_statistics)
 
         # log aggregated entries
         file_name = '{}_aggregated_entries_all_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['train_iterations']).zfill(6), str(parameter['exp_postfix']))
@@ -104,9 +100,10 @@ class GraphAutoencoderExperimentDynamic(object):
         file_name = '{}_aggregated_entries_selected_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['train_iterations']).zfill(6), str(parameter['exp_postfix']))
         aggregated_entries_belnr.to_csv(os.path.join(parameter['res_sub_dir'], file_name), sep=',', encoding='utf-8')
 
-        # determine the number of accounts and features
-        experiment_statistics['no_accounts'] = data_parameter['no_posting_accounts']
-        experiment_statistics['no_features'] = data_parameter['no_posting_features'] * parameter['feat_embed_dim']
+        # determine the number of journal entries, accounts and features
+        experiment_statistics['no_journal_entries'] = data_statistics['no_journal_entries']
+        experiment_statistics['no_accounts'] = data_statistics['no_posting_accounts']
+        experiment_statistics['no_features'] = data_statistics['no_posting_features'] * parameter['feat_embed_dim']
 
         # update the encoder input dim depending on the number of features
         parameter['encoder_dim'].insert(0, experiment_statistics['no_features'])
@@ -125,7 +122,7 @@ class GraphAutoencoderExperimentDynamic(object):
 
         # init the graph autoencoder model
         model = GNNAutoencoderDynamic.GNNAutoencoderDynamic(
-            statistics=data_parameter
+            statistics=data_statistics
             , feat_embed_dim=parameter['feat_embed_dim']
             , encoder_dim=parameter['encoder_dim']
             , encoder_bottleneck=parameter['encoder_bottleneck']
@@ -163,29 +160,30 @@ class GraphAutoencoderExperimentDynamic(object):
         scheduler = th.optim.lr_scheduler.StepLR(optimizer, step_size=int(parameter['train_iterations'] / parameter['learning_rate_steps']), gamma=0.1)
 
         # run the model training
-        model, experiment_statistics = self.run_model_training(parameter=parameter, data_statistics=data_parameter, experiment_statistics=experiment_statistics, model=model, rec_criterion=rec_criterion, rec_criterion_details=rec_criterion_details, train_loader=train_loader, eval_loader=eval_loader, optimizer=optimizer, scheduler=scheduler, aggregated_entries=aggregated_entries_belnr)
+        model, experiment_statistics = self.run_model_training(parameter=parameter, data_statistics=data_statistics, experiment_statistics=experiment_statistics, model=model, rec_criterion=rec_criterion, rec_criterion_details=rec_criterion_details, train_loader=train_loader, eval_loader=eval_loader, optimizer=optimizer, scheduler=scheduler, aggregated_entries=aggregated_entries_belnr)
 
         #### start evaluation routine
 
         # run the model evaluation
-        aggregated_entries_belnr, experiment_statistics = self.run_model_validation(parameter=parameter, data_statistics=data_parameter, experiment_statistics=experiment_statistics, model=model, rec_criterion=rec_criterion, rec_criterion_details=rec_criterion_details, eval_loader=eval_loader, aggregated_entries=aggregated_entries_belnr)
+        aggregated_entries_belnr, experiment_statistics = self.run_model_validation(parameter=parameter, data_statistics=data_statistics, experiment_statistics=experiment_statistics, model=model, rec_criterion=rec_criterion, rec_criterion_details=rec_criterion_details, eval_loader=eval_loader, aggregated_entries=aggregated_entries_belnr)
 
-        #### start anomaly detection routine
-        aggregated_entries_belnr, global_anomalies, local_anomalies = self.run_anomaly_detection(parameter, aggregated_entries_belnr)
+        # determine model evaluation measures
+        experiment_statistics = self.eha.compute_error_pr_auc_score(statistics=data_statistics, results=experiment_statistics, entries=aggregated_entries_belnr)
+        experiment_statistics = self.eha.compute_error_roc_auc_score(statistics=data_statistics, results=experiment_statistics, entries=aggregated_entries_belnr)
 
-        # determine number of clusters
-        experiment_statistics['no_clusters'] = int(len(aggregated_entries_belnr['Y_ANOMALY_CLASS'].unique())-2)
+        # run anomaly detection routine
+        experiment_statistics, aggregated_entries_belnr = self.aha.run_anomaly_detection(parameter=parameter, results=experiment_statistics, entries=aggregated_entries_belnr)
 
-        # determine number of global and local anomalies
-        experiment_statistics['no_global_anomalies'] = int(global_anomalies.shape[0])
-        experiment_statistics['no_local_anomalies'] = int(local_anomalies.shape[0])
+        # determine model evaluation measures
+        experiment_statistics = self.eha.compute_density_pr_auc_score(statistics=data_statistics, results=experiment_statistics, entries=aggregated_entries_belnr)
+        experiment_statistics = self.eha.compute_error_pr_auc_score(statistics=data_statistics, results=experiment_statistics, entries=aggregated_entries_belnr)
+
+        # determine current learning rate
+        experiment_statistics['learning_rate'] = optimizer.state_dict()['param_groups'][0]['lr']
 
         # log aggregated entries
         file_name = '{}_aggregated_entries_selected_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['train_iterations']).zfill(6), str(parameter['exp_postfix']))
         aggregated_entries_belnr.to_csv(os.path.join(parameter['res_sub_dir'], file_name), sep=',', encoding='utf-8')
-
-        # determine current learning rate
-        experiment_statistics['learning_rate'] = optimizer.state_dict()['param_groups'][0]['lr']
 
         # log experiment results
         file_name = '{}_experiment_log_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['train_iterations']).zfill(6), str(parameter['exp_postfix']))
@@ -195,7 +193,7 @@ class GraphAutoencoderExperimentDynamic(object):
         self.vha.set_plot_dir(plot_dir=parameter['vis_sub_dir'])
 
         # run the model visualization
-        self.run_model_visualization(parameter=parameter, data_statistics=data_parameter, experiment_statistics=experiment_statistics, data=aggregated_entries_belnr, average_train_loss=experiment_statistics['average_train_loss'], average_valid_loss=experiment_statistics['average_valid_loss'], iteration=parameter['train_iterations'])
+        self.run_model_visualization(parameter=parameter, data_statistics=data_statistics, experiment_statistics=experiment_statistics, data=aggregated_entries_belnr, average_train_loss=experiment_statistics['average_train_loss'], average_valid_loss=experiment_statistics['average_valid_loss'], iteration=parameter['train_iterations'])
 
         # case: wandb logging enabled
         if parameter['wandb']:
@@ -216,6 +214,29 @@ class GraphAutoencoderExperimentDynamic(object):
         average_train_iteration_loss = 0.0
         average_adj_train_iteration_loss = 0.0
         average_fea_train_iteration_loss = 0.0
+
+        # init experiment loss statistics
+        experiment_statistics['average_train_loss'] = 0.0
+        experiment_statistics['average_fea_train_loss'] = 0.0
+        experiment_statistics['average_adj_train_loss'] = 0.0
+
+        # init experiment error statistics
+        experiment_statistics['error_roc_auc_all'] = 0.0
+        experiment_statistics['error_roc_auc_global'] = 0.0
+        experiment_statistics['error_roc_auc_local'] = 0.0
+
+        experiment_statistics['error_pr_auc_all'] = 0.0
+        experiment_statistics['error_pr_auc_global'] = 0.0
+        experiment_statistics['error_pr_auc_local'] = 0.0
+
+        # init experiment density statistics
+        experiment_statistics['density_roc_auc_all'] = 0.0
+        experiment_statistics['density_roc_auc_global'] = 0.0
+        experiment_statistics['density_roc_auc_local'] = 0.0
+
+        experiment_statistics['density_pr_auc_all'] = 0.0
+        experiment_statistics['density_pr_auc_global'] = 0.0
+        experiment_statistics['density_pr_auc_local'] = 0.0
 
         # push aggregated losses to compute device
         rec_criterion = rec_criterion.to(parameter['device'])
@@ -315,30 +336,25 @@ class GraphAutoencoderExperimentDynamic(object):
             experiment_statistics['average_adj_train_loss'] = average_adj_train_iteration_loss / (i + 1)
             experiment_statistics['learning_rate'] = optimizer.state_dict()['param_groups'][0]['lr']
 
-            # case: wandb logging enabled
-            if parameter['wandb']:
-
-                # log training progress
-                self.lha.update_wandb_run(statistics=experiment_statistics)
-
             # case: eval iteration
             if (i % parameter['valid_iterations'] == 0) and (i > 0):
 
                 # run model evaluation
                 aggregated_entries, experiment_statistics = self.run_model_validation(parameter, data_statistics, experiment_statistics, model, rec_criterion, rec_criterion_details, eval_loader, aggregated_entries)
 
-                # determine current learning rate
-                experiment_statistics['learning_rate'] = optimizer.state_dict()['param_groups'][0]['lr']
+                # determine model error evaluation measures
+                experiment_statistics = self.eha.compute_error_roc_auc_score(statistics=data_statistics, results=experiment_statistics, entries=aggregated_entries)
+                experiment_statistics = self.eha.compute_error_pr_auc_score(statistics=data_statistics, results=experiment_statistics, entries=aggregated_entries)
 
                 # run anomaly detection routine
-                selected_aggregated_entries, global_anomalies, local_anomalies = self.run_anomaly_detection(parameter, aggregated_entries)
+                experiment_statistics, aggregated_entries = self.aha.run_anomaly_detection(parameter=parameter, results=experiment_statistics, entries=aggregated_entries)
 
-                # determine number of clusters
-                experiment_statistics['no_clusters'] = int(len(selected_aggregated_entries['Y_ANOMALY_CLASS'].unique())-2)
+                # determine model density evaluation measures
+                experiment_statistics = self.eha.compute_density_roc_auc_score(statistics=data_statistics, results=experiment_statistics, entries=aggregated_entries)
+                experiment_statistics = self.eha.compute_density_pr_auc_score(statistics=data_statistics, results=experiment_statistics, entries=aggregated_entries)
 
-                # determine number of global and local anomalies
-                experiment_statistics['no_global_anomalies'] = int(global_anomalies.shape[0])
-                experiment_statistics['no_local_anomalies'] = int(local_anomalies.shape[0])
+                # determine current learning rate
+                experiment_statistics['learning_rate'] = optimizer.state_dict()['param_groups'][0]['lr']
 
                 # log experiment results
                 file_name = '{}_experiment_log_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['train_iterations']).zfill(6), str(parameter['exp_postfix']))
@@ -348,11 +364,17 @@ class GraphAutoencoderExperimentDynamic(object):
                 self.vha.set_plot_dir(plot_dir=parameter['vis_sub_dir'])
 
                 # run the result visualization
-                self.run_model_visualization(parameter=parameter, data_statistics=data_statistics, experiment_statistics=experiment_statistics, data=selected_aggregated_entries, average_train_loss=experiment_statistics['average_train_loss'], average_valid_loss=experiment_statistics['average_valid_loss'], iteration=i)
+                self.run_model_visualization(parameter=parameter, data_statistics=data_statistics, experiment_statistics=experiment_statistics, data=aggregated_entries, average_train_loss=experiment_statistics['average_train_loss'], average_valid_loss=experiment_statistics['average_valid_loss'], iteration=i)
 
                 # save client model checkpoint
                 file_name = '{}_ae_gnn_model_checkpoint_itr_{}.pth'.format(parameter['exp_timestamp'], str(i).zfill(6))
                 # self.uha.save_client_model_checkpoint(filename=file_name, iteration=i, model=model, optimizer=optimizer, chpt_dir=parameter['log_sub_dir'])
+
+            # case: wandb logging enabled
+            if parameter['wandb']:
+
+                # log training progress
+                self.lha.update_wandb_run(statistics=experiment_statistics)
 
         # return model training results
         return model, experiment_statistics
@@ -502,136 +524,23 @@ class GraphAutoencoderExperimentDynamic(object):
         # return model evaluation results
         return aggregated_entries, experiment_statistics
 
-    # run the anomaly detection
-    def run_anomaly_detection(self, parameter, aggregated_entries):
-
-        # case: one-class svm anomaly detection
-        if parameter['algo'] == 'svm':
-
-            # init the one-class anomaly detection model
-            svm_model = OneClassSVM(kernel=parameter['kernel'], degree=parameter['degree'], gamma=parameter['gamma'])
-
-            # determine anomaly detection prediction
-            predictions = svm_model.fit_predict(aggregated_entries[['z1', 'z2']])
-
-            # determine anomaly detection score
-            scores = svm_model.score_samples(aggregated_entries[['z1', 'z2']])
-
-        # case: local outlier factor anomaly detection
-        elif parameter['algo'] == 'lof':
-
-            # init the local outlier factor model
-            lof_model = LocalOutlierFactor(n_neighbors=parameter['n_neighbors'], leaf_size=parameter['leaf_size'])
-
-            # determine anomaly detection prediction
-            predictions = lof_model.fit_predict(aggregated_entries[['z1', 'z2']])
-
-            # determine anomaly detection score
-            scores = lof_model.negative_outlier_factor_
-
-        # case: isolation forest anomaly detection
-        elif parameter['algo'] == 'iforest':
-
-            # init the local outlier factor model
-            iforest_model = IsolationForest(random_state=0, n_estimators=100, max_samples=256)
-
-            # determine anomaly detection prediction
-            predictions = iforest_model.fit_predict(aggregated_entries[['z1', 'z2']])
-
-            # determine anomaly detection score
-            scores = iforest_model.score_samples(aggregated_entries[['z1', 'z2']])
-
-        # case: isolation hdbscan anomaly detection
-        elif parameter['algo'] == 'hdbscan':
-
-            # grid search best hdbscan parameters
-            best_parameters = self.grid_search_hdbscan_parameter(parameter=parameter, aggregated_entries=aggregated_entries)
-
-            # update experiment parameter
-            parameter['min_cluster_size'] = best_parameters['min_cluster_size']
-            parameter['min_samples'] = best_parameters['min_samples']
-            parameter['metric'] = best_parameters['metric']
-            parameter['cluster_selection_method'] = best_parameters['cluster_selection_method']
-
-            # init the hdbscan model with grid searched parameters
-            hdbscan_model = hdbscan.HDBSCAN(min_cluster_size=parameter['min_cluster_size'], min_samples=parameter['min_samples'], metric=parameter['metric'], cluster_selection_method=parameter['cluster_selection_method'])
-
-            # determine hdbscan clustering prediction
-            predictions = hdbscan_model.fit_predict(aggregated_entries[['z1', 'z2']])
-
-            # determine anomaly detection score
-            scores = hdbscan_model.outlier_scores_
-
-            # replace potential nan values of the hdbscan anomaly score
-            scores = np.nan_to_num(scores)
-
-            # determine the anomaly score mean and standard deviation
-            scores_mean = scores.mean()
-            scores_std = scores.std()
-
-            # normalize anomaly detection score
-            scores = (scores - scores_mean) / scores_std
-
-            # determine top quantile anomaly threshold
-            anomaly_threshold = pd.Series(scores).quantile(0.99)
-
-            # determine anomaly detection prediction
-            predictions[np.where((scores >= anomaly_threshold) & (predictions != -1))[0]] = -2
-
-        # collect local outlier factor anomaly prediction results
-        aggregated_entries['Y_ANOMALY_CLASS'] = predictions
-
-        # collect local outlier factor anomaly scores results
-        aggregated_entries['Y_ANOMALY_SCORE'] = scores
-
-        # collect local outlier factor anomaly prediction results
-        aggregated_entries['Y_ANOMALY_LABEL'] = 'Regular'
-        aggregated_entries['Y_ANOMALY_LABEL'] = np.where(aggregated_entries['Y_ANOMALY_CLASS'] == -1, 'Global Anomaly', aggregated_entries['Y_ANOMALY_LABEL'])
-        aggregated_entries['Y_ANOMALY_LABEL'] = np.where(aggregated_entries['Y_ANOMALY_CLASS'] == -2, 'Local Anomaly', aggregated_entries['Y_ANOMALY_LABEL'])
-
-        # determine global anomalies
-        global_anomalies = aggregated_entries[aggregated_entries['Y_ANOMALY_CLASS'] == -1]
-
-        # determine local anomalies
-        local_anomalies = aggregated_entries[aggregated_entries['Y_ANOMALY_CLASS'] == -2]
-
-        # return anomaly detection results
-        return aggregated_entries, global_anomalies, local_anomalies
-
-    def grid_search_hdbscan_parameter(self, parameter, aggregated_entries):
-
-        # init the hdbscan model
-        hdb = hdbscan.HDBSCAN(gen_min_span_tree=True).fit(aggregated_entries[['z1', 'z2']])
-
-        # specify the grid hdbscan grid search paramters
-        param_dist = {'min_samples': parameter['grid_min_samples'],
-                      'min_cluster_size': parameter['grid_min_cluster_size'],
-                      'cluster_selection_method': parameter['grid_cluster_selection_method'],
-                      'metric': parameter['grid_metric']
-                      }
-
-        # init grid search optimization criterion
-        validity_scorer = make_scorer(hdbscan.validity.validity_index, greater_is_better=True)
-
-        # init hdbscan parameter grid search
-        random_search = RandomizedSearchCV(hdb, param_distributions=param_dist, n_iter=20, scoring=validity_scorer, random_state=parameter['seed'], verbose=0)
-
-        # run hdbscan parameter grid search
-        random_search.fit(aggregated_entries[['z1', 'z2']])
-
-        # get hdbscan parameters
-        best_parameters = random_search.best_params_
-
-        # return best parameters
-        return best_parameters
-
     # run the model and result visualization
     def run_model_visualization(self, parameter, data_statistics, experiment_statistics, data, average_train_loss, average_valid_loss, iteration):
 
         # visualize learned embeddings
-        filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}.png'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
+        filename = '{}_1_1_je_embedding_sd_{}_it_{}_{}.png'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
         title = 'GNN Autoencoder - Journal Entry Embedding Distribution\niterations: {}, avg-train-loss: {}, avg-valid-loss: {}'.format(str(iteration).zfill(6), str(np.round((average_train_loss / iteration), 6)), str(np.round((average_valid_loss / iteration), 6)))
-        self.vha.plot_embeddings_2d(data=data, z1_col_name='z1', z2_col_name='z2', c_col_name='Y_REC_ERROR', filename=filename, title=title)
+        self.vha.plot_embeddings_2d(data=data, z1_col_name='z1', z2_col_name='z2', c_col_name=data_statistics['je_class_name_field'], filename=filename, title=title)
+
+        # visualize reconstruction error
+        filename = '{}_1_2_je_embedding_error_sd_{}_it_{}_{}.png'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
+        title = 'GNN Autoencoder - Journal Entry Embedding Distribution\niterations: {}, avg-train-loss: {}, avg-valid-loss: {}'.format(str(iteration).zfill(6), str(np.round((average_train_loss / iteration), 6)), str(np.round((average_valid_loss / iteration), 6)))
+        self.vha.plot_embeddings_2d_error(data=data, z1_col_name='z1', z2_col_name='z2', c_col_name='Y_REC_ERROR', filename=filename, title=title)
+
+        # visualize anomaly detection
+        filename = '{}_1_3_je_embedding_anomalies_sd_{}_it_{}_{}.png'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
+        title = 'GNN Autoencoder - Journal Entry Embedding Distribution\niterations: {}, avg-train-loss: {}, avg-valid-loss: {}'.format(str(iteration).zfill(6), str(np.round((average_train_loss / iteration), 6)), str(np.round((average_valid_loss / iteration), 6)))
+        self.vha.plot_embeddings_2d_anomalies(data=data, z1_col_name='z1', z2_col_name='z2', c_col_name='Y_ANOMALY_CLASS', filename=filename, title=title)
 
         # visualize learned embeddings in specific interval
         #filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_interval.png'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
@@ -657,9 +566,19 @@ class GraphAutoencoderExperimentDynamic(object):
             # Open - self.vha.plot_sap_embeddings_2d_interactive(data=data, attributes=data_statistics['visual_attributes'], hover=data_statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name='Y_REC_ERROR', filename=filename, title=title)
 
         # visualize learned embeddings interactively
-        filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_anomalies_score_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
-        title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}<br>Anomaly-Algorithm: {}, Clusters: {}, Global-Anomalies: {}, Local-Anomalies: {}'.format(str(parameter['dataset']).upper(), str(iteration).zfill(6), str(np.round((average_train_loss / iteration), 6)), str(np.round((average_valid_loss / iteration), 6)), str(parameter['algo']).upper(), str(experiment_statistics['no_clusters']), str(experiment_statistics['no_global_anomalies']), str(experiment_statistics['no_local_anomalies']))
-        self.vha.plot_embeddings_2d_anomalies_score_interactive(data=data, hover=data_statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name='Y_ANOMALY_SCORE', filename=filename, title=title)
+        filename = '{}_2_1_je_embedding_sd_{}_it_{}_{}_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
+        title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}<br>Anomaly-Algorithm: {}, Clusters: {}, Global-Anomalies: {}, Local-Anomalies: {}'.format(str(parameter['dataset']).upper(), str(iteration).zfill(6), str(np.round((average_train_loss / iteration), 6)), str(np.round((average_valid_loss / iteration), 6)), str(parameter['algo']).upper(), str(experiment_statistics['no_detected_clusters']), str(experiment_statistics['no_detected_global_anomalies']), str(experiment_statistics['no_detected_local_anomalies']))
+        self.vha.plot_embeddings_2d_interactive(data=data, hover=data_statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name=data_statistics['je_class_name_field'], filename=filename, title=title)
+
+        # visualize learned embeddings interactively
+        filename = '{}_2_2_je_embedding_error_sd_{}_it_{}_{}_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
+        title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}<br>Anomaly-Algorithm: {}, Clusters: {}, Global-Anomalies: {}, Local-Anomalies: {}'.format(str(parameter['dataset']).upper(), str(iteration).zfill(6), str(np.round((average_train_loss / iteration), 6)), str(np.round((average_valid_loss / iteration), 6)), str(parameter['algo']).upper(), str(experiment_statistics['no_detected_clusters']), str(experiment_statistics['no_detected_global_anomalies']), str(experiment_statistics['no_detected_local_anomalies']))
+        self.vha.plot_embeddings_2d_error_interactive(data=data, hover=data_statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name='Y_REC_ERROR', filename=filename, title=title)
+
+        # visualize learned embeddings interactively
+        filename = '{}_2_3_je_embedding_anomalies_sd_{}_it_{}_{}_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
+        title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}<br>Anomaly-Algorithm: {}, Clusters: {}, Global-Anomalies: {}, Local-Anomalies: {}'.format(str(parameter['dataset']).upper(), str(iteration).zfill(6), str(np.round((average_train_loss / iteration), 6)), str(np.round((average_valid_loss / iteration), 6)), str(parameter['algo']).upper(), str(experiment_statistics['no_detected_clusters']), str(experiment_statistics['no_detected_global_anomalies']), str(experiment_statistics['no_detected_local_anomalies']))
+        self.vha.plot_embeddings_2d_anomalies_interactive(data=data, hover=data_statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name='Y_ANOMALY_CLASS', filename=filename, title=title)
 
         # visualize learned embeddings interactively
         #filename = '{}_je_embedding_distribution_sd_{}_it_{}_{}_anomalies_cluster_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
