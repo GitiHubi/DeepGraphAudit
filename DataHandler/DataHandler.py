@@ -17,11 +17,15 @@ import numpy as np
 import pandas as pd
 import itertools as it
 
+# import networkx
+import networkx as nx
+
 # import sklearn
 from sklearn.preprocessing import LabelEncoder
 
 # import project libraries
 from AnomalyHandler import AnomalyHandler
+from VisualisationHandler import VisualisationHandler
 
 # class DataHandler
 class DataHandler(object):
@@ -30,6 +34,9 @@ class DataHandler(object):
 
         # init anomaly handler
         self.aha = AnomalyHandler.AnomalyHandler()
+
+        # init visualization handler
+        self.vha = VisualisationHandler.VisualisationHandler()
 
     def get_ernstyoung_data_range(self, parameter):
 
@@ -132,15 +139,36 @@ class DataHandler(object):
         # combine pre-processed categorical and numerical attributes
         processed_detailed_entries = pd.concat([processed_detailed_entries, processed_detailed_cat_entries, processed_detailed_num_entries], axis=1)
 
-        # create global graph anomalies
-        original_entries_anomalies = self.aha.generate_global_graph_anomalies_ey(statistics=statistics, entries=processed_detailed_entries, n=10, seed=parameter['seed'])
+        ### Step 2: Create and add global/local anomalies ############################################################
 
-        ### Step 2: Encode general ledger account attribute #####################################################
+        # init pre-processed, global and local anomaly entries
+        processed_detailed_entries_anomalies = processed_detailed_entries.copy(deep=True)
+
+        # add data class label
+        processed_detailed_entries_anomalies[statistics['je_class_field']] = 0
+        processed_detailed_entries_anomalies[statistics['je_class_name_field']] = 'regular'
+
+        # create global graph anomalies
+        global_anomalies = self.aha.generate_global_graph_anomalies(statistics=statistics, entries=processed_detailed_entries, no_anomalies=parameter['no_global_anomalies'], seed=parameter['seed'])
+
+        # create local graph anomalies
+        local_anomalies = self.aha.generate_local_graph_anomalies(statistics=statistics, entries=processed_detailed_entries, no_anomalies=parameter['no_local_anomalies'], seed=parameter['seed'])
+
+        # combine pre-processed, global and local anomaly entries
+        processed_detailed_entries_anomalies = pd.concat([processed_detailed_entries_anomalies, global_anomalies, local_anomalies], axis=0)
+
+        # determine pre-processed global and local anomaly entry class labels
+        processed_detailed_entries_labels = processed_detailed_entries_anomalies[[statistics['je_identifier_field']] + [statistics['je_gl_account_field']] + [statistics['je_class_field']] + [statistics['je_class_name_field']]]
+
+        # remove pre-processed, global and local anomaly entry class label information
+        processed_detailed_entries = processed_detailed_entries_anomalies[processed_detailed_entries.columns]
+
+        ### Step 3: Encode general ledger account attribute ##########################################################
 
         # encode general ledger account attribute
         processed_detailed_entries[statistics['je_gl_account_field']] = pd.Categorical(processed_detailed_entries[statistics['je_gl_account_field']]).codes
 
-        ### Step 2: Aggregate journal entry attribute values #########################################################
+        ### Step 4: Aggregate journal entry attribute values #########################################################
 
         # aggregate journal entries on an account posting line item level (belnr, hkont, and shkzg) -> used to create the adjacency matrices
         fields = [statistics['je_identifier_field']] + [statistics['je_gl_account_field']] + [statistics['je_line_item_field']] + [statistics['je_debit_credit_field']]
@@ -152,9 +180,12 @@ class DataHandler(object):
 
         # aggregate journal entries on belnr level -> used to visualize the results
         fields = [statistics['je_identifier_field']]
-        belnr_entries = self.aggregate_entries_per_belnr(statistics=statistics, fields=fields, entries=processed_detailed_entries)
+        belnr_entries = self.aggregate_entries_per_belnr(statistics=statistics, fields=fields, entries=processed_detailed_entries, labels=processed_detailed_entries_labels)
 
-        ### Step 3: Encode journal entry attribute values ####################################################
+        ### Step 5: Encode journal entry attribute values ####################################################
+
+        # determine unique posted journal entries
+        statistics['no_journal_entries'] = len(belnr_entries[statistics['je_identifier_field']].unique())
 
         # determine unique posted accounts
         statistics['no_posting_accounts'] = len(belnr_hkont_entries[statistics['je_gl_account_field']].unique())
@@ -165,10 +196,21 @@ class DataHandler(object):
         # encode the pre-processed categorical transaction attributes
         belnr_hkont_entries_encoded, statistics, belnr_hkont_entries = self.encode_je_attributes(parameter=parameter, statistics=statistics, entries=belnr_hkont_entries)
 
-        ### Step 4: Create feature and adjacency matrices ####################################################
+        ### Step 6: Create feature and adjacency matrices ####################################################
 
         # create the graph learning adjacency and feature matrices
         posting_ids, adj_matrices, feat_matrices, statistics = self.create_adj_feat_matrices(parameter=parameter, statistics=statistics, adjacencies=belnr_hkont_shkzg_entries, features=belnr_hkont_entries, encoded_features=belnr_hkont_entries_encoded)
+
+        ### Step 7: Visualise journal entry graphs ###########################################################
+
+        # case: graph visualization enabled
+        if parameter['visualize']:
+
+            # visualize journal entries graphs
+            # self.visualize_single_entries_graph(parameter=parameter, statistics=statistics, adjacencies=belnr_hkont_shkzg_entries, features=belnr_hkont_entries, encoded_features=belnr_hkont_entries_encoded)
+
+            # visualize journal entries graphs
+            self.visualize_entire_entries_graph(parameter=parameter, statistics=statistics, adjacencies=belnr_hkont_shkzg_entries, features=belnr_hkont_entries, encoded_features=belnr_hkont_entries_encoded)
 
         # log configuration processing
         now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
@@ -231,12 +273,36 @@ class DataHandler(object):
         # combine pre-processed categorical and numerical attributes
         processed_detailed_entries = pd.concat([processed_detailed_entries, processed_detailed_cat_entries, processed_detailed_num_entries], axis=1)
 
-        ### Step 3: Encode general ledger account attribute ##################################################
+        ### Step 3: Create and add global/local anomalies ############################################################
+
+        # init pre-processed, global and local anomaly entries
+        processed_detailed_entries_anomalies = processed_detailed_entries.copy(deep=True)
+
+        # add data class label
+        processed_detailed_entries_anomalies[statistics['je_class_field']] = 0
+        processed_detailed_entries_anomalies[statistics['je_class_name_field']] = 'regular'
+
+        # create global graph anomalies
+        global_anomalies = self.aha.generate_global_graph_anomalies(statistics=statistics, entries=processed_detailed_entries, no_anomalies=parameter['no_global_anomalies'], seed=parameter['seed'])
+
+        # create local graph anomalies
+        local_anomalies = self.aha.generate_local_graph_anomalies(statistics=statistics, entries=processed_detailed_entries, no_anomalies=parameter['no_local_anomalies'], seed=parameter['seed'])
+
+        # combine pre-processed, global and local anomaly entries
+        processed_detailed_entries_anomalies = pd.concat([processed_detailed_entries_anomalies, global_anomalies, local_anomalies], axis=0)
+
+        # determine pre-processed global and local anomaly entry class labels
+        processed_detailed_entries_labels = processed_detailed_entries_anomalies[[statistics['je_identifier_field']] + [statistics['je_gl_account_field']] + [statistics['je_class_field']] + [statistics['je_class_name_field']]]
+
+        # remove pre-processed, global and local anomaly entry class label information
+        processed_detailed_entries = processed_detailed_entries_anomalies[processed_detailed_entries.columns]
+
+        ### Step 4: Encode general ledger account attribute ##################################################
 
         # encode general ledger account attribute
         processed_detailed_entries[statistics['je_gl_account_field']] = pd.Categorical(processed_detailed_entries[statistics['je_gl_account_field']]).codes
 
-        ### Step 4: Aggregate journal entry attribute values #################################################
+        ### Step 5: Aggregate journal entry attribute values #################################################
 
         # aggregate journal entries on a belnr, hkont, and shkzg level -> used to create the adjacency matrices
         fields = [statistics['je_identifier_field']] + [statistics['je_gl_account_field']] + [statistics['je_line_item_field']] + [statistics['je_debit_credit_field']]
@@ -248,9 +314,12 @@ class DataHandler(object):
 
         # aggregate journal entries on belnr level -> used to visualize the results
         fields = [statistics['je_identifier_field']]
-        belnr_entries = self.aggregate_entries_per_belnr(statistics=statistics, fields=fields, entries=processed_detailed_entries)
+        belnr_entries = self.aggregate_entries_per_belnr(statistics=statistics, fields=fields, entries=processed_detailed_entries, labels=processed_detailed_entries_labels)
 
-        ### Step 5: Encode journal entry attribute values ####################################################
+        ### Step 6: Encode journal entry attribute values ####################################################
+
+        # determine unique posted journal entries
+        statistics['no_journal_entries'] = len(belnr_entries[statistics['je_identifier_field']].unique())
 
         # determine unique posted accounts
         statistics['no_posting_accounts'] = len(belnr_hkont_entries[statistics['je_gl_account_field']].unique())
@@ -261,7 +330,7 @@ class DataHandler(object):
         # encode the pre-processed categorical transaction attributes
         belnr_hkont_entries_encoded, statistics, belnr_hkont_entries = self.encode_je_attributes(parameter=parameter, statistics=statistics, entries=belnr_hkont_entries)
 
-        ### Step 6: Create feature and adjacency matrices ####################################################
+        ### Step 7: Create feature and adjacency matrices ####################################################
 
         # create the graph learning adjacency and feature matrices
         posting_ids, adj_matrices, feat_matrices, statistics = self.create_adj_feat_matrices(parameter=parameter, statistics=statistics, adjacencies=belnr_hkont_shkzg_entries, features=belnr_hkont_entries, encoded_features=belnr_hkont_entries_encoded)
@@ -269,6 +338,17 @@ class DataHandler(object):
         # log configuration processing
         now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
         print('[INFO {}] DataHandler :: {} transactional data, {} adjacency matrices and {} feature matrices created.'.format(now, str(parameter['dataset']).upper(), str(len(adj_matrices)), str(len(feat_matrices))))
+
+        ### Step 8: Visualise journal entry graphs ###########################################################
+
+        # case: graph visualization enabled
+        if parameter['visualize']:
+
+            # visualize journal entries graphs
+            # self.visualize_single_entries_graph(parameter=parameter, statistics=statistics, adjacencies=belnr_hkont_shkzg_entries, features=belnr_hkont_entries, encoded_features=belnr_hkont_entries_encoded)
+
+            # visualize journal entries graphs
+            self.visualize_entire_entries_graph(parameter=parameter, statistics=statistics, adjacencies=belnr_hkont_shkzg_entries, features=belnr_hkont_entries, encoded_features=belnr_hkont_entries_encoded)
 
         # return original and encoded transactions
         return posting_ids, adj_matrices, feat_matrices, belnr_hkont_entries, belnr_entries, statistics
@@ -492,6 +572,9 @@ class DataHandler(object):
         # determine unique posting ids
         posting_ids = encoded_cat_entries.groupby(['Y_JE_IDENTIFIER']).count().index
 
+        # collect number of graph nodes
+        entries_statistics['no_journal_entries'] = len(posting_ids)
+
         # determine unique posted accounts
         posting_accounts = encoded_cat_entries[encoded_attributes[0]].unique()
 
@@ -547,6 +630,126 @@ class DataHandler(object):
 
         # return encoded features
         return features, statistics, entries
+
+    def visualize_single_entries_graph(self, parameter, statistics, adjacencies, features, encoded_features):
+
+        # determine unique posting ids
+        posting_ids = adjacencies.groupby([statistics['je_identifier_field']]).count().index
+
+        # iterate over distinct posting ids
+        for i, posting_id in enumerate(posting_ids):
+
+            # init the networkx posting graph
+            entry_graph = nx.Graph()
+
+            # determine current posting line items
+            posting_adjacencies = adjacencies[adjacencies[statistics['je_identifier_field']] == posting_id]
+
+            # determine all possible account pairs
+            account_pairs = list(it.combinations(posting_adjacencies[statistics['je_gl_account_field']], 2))
+
+            # determine current posting features
+            posting_features = features[features[statistics['je_identifier_field']] == posting_id]
+
+            # iterate over distinct account pairs
+            for pair in account_pairs:
+
+                # determine pairs debit and credit accounts
+                pair_a_debit_credit = pair[0]
+                pair_b_debit_credit = pair[1]
+
+                # determine pairs debit and credit account features
+                pair_a_debit_credit_name = posting_features[posting_features[statistics['je_gl_account_field']] == str(pair_a_debit_credit)]['Y_HKONT_TEXT']
+                pair_b_debit_credit_name = posting_features[posting_features[statistics['je_gl_account_field']] == str(pair_b_debit_credit)]['Y_HKONT_TEXT']
+
+                # add graph debit and credit nodes
+                entry_graph.add_node(pair_a_debit_credit, account=pair_a_debit_credit_name)
+                entry_graph.add_node(pair_b_debit_credit, account=pair_b_debit_credit_name)
+
+                # add graph debit and credit edge
+                entry_graph.add_edge(pair_a_debit_credit, pair_b_debit_credit)
+
+            # save plot to plotting directory
+            filename = '{}_single_graph_{}.png'.format(str(parameter['exp_timestamp']), str(posting_id).zfill(5))
+            self.vha.plot_single_journal_entry_graph(parameter, entry_graph=entry_graph, filename=filename)
+
+    def visualize_entire_entries_graph(self, parameter, statistics, adjacencies, features, encoded_features):
+
+        # determine unique posting ids
+        posting_ids = adjacencies.groupby([statistics['je_identifier_field']]).count().index
+
+        # init the networkx posting graph
+        entire_entries_graph = nx.Graph()
+
+        # iterate over distinct posting ids
+        for i, posting_id in enumerate(posting_ids):
+
+            # determine current posting line items
+            posting_adjacencies = adjacencies[adjacencies[statistics['je_identifier_field']] == posting_id]
+
+            # determine all possible account pairs
+            account_pairs = list(it.combinations(posting_adjacencies[statistics['je_gl_account_field']], 2))
+
+            # determine current posting features
+            posting_features = features[features[statistics['je_identifier_field']] == posting_id]
+
+            # iterate over distinct account pairs
+            for pair in account_pairs:
+
+                # determine pairs debit and credit accounts
+                pair_a_debit_credit = pair[0]
+                pair_b_debit_credit = pair[1]
+
+                # determine pairs debit and credit account features
+                pair_a_debit_credit_name = posting_features[posting_features[statistics['je_gl_account_field']] == str(pair_a_debit_credit)]['Y_HKONT_TEXT']
+                pair_b_debit_credit_name = posting_features[posting_features[statistics['je_gl_account_field']] == str(pair_b_debit_credit)]['Y_HKONT_TEXT']
+
+                # add graph debit and credit edge
+                entire_entries_graph.add_node(pair_a_debit_credit, account=pair_a_debit_credit_name)
+                entire_entries_graph.add_node(pair_b_debit_credit, account=pair_b_debit_credit_name)
+
+                # add graph debit and credit edge
+                entire_entries_graph.add_edge(pair_a_debit_credit, pair_b_debit_credit)
+
+        # determine plotting positions
+        pos_nodes = nx.spring_layout(entire_entries_graph)
+
+        # init the networkx posting graph
+        partial_entries_graph = nx.Graph()
+
+        # iterate over distinct posting ids
+        for i, posting_id in enumerate(posting_ids):
+
+            # determine current posting line items
+            posting_adjacencies = adjacencies[adjacencies[statistics['je_identifier_field']] == posting_id]
+
+            # determine all possible account pairs
+            account_pairs = list(it.combinations(posting_adjacencies[statistics['je_gl_account_field']], 2))
+
+            # determine current posting features
+            posting_features = features[features[statistics['je_identifier_field']] == posting_id]
+
+            # iterate over distinct account pairs
+            for pair in account_pairs:
+
+                # determine pairs debit and credit accounts
+                pair_a_debit_credit = pair[0]
+                pair_b_debit_credit = pair[1]
+
+                # determine pairs debit and credit account features
+                pair_a_debit_credit_name = posting_features[posting_features[statistics['je_gl_account_field']] == str(pair_a_debit_credit)]['Y_HKONT_TEXT']
+                pair_b_debit_credit_name = posting_features[posting_features[statistics['je_gl_account_field']] == str(pair_b_debit_credit)]['Y_HKONT_TEXT']
+
+                # add graph debit and credit edge
+                partial_entries_graph.add_node(pair_a_debit_credit, account=pair_a_debit_credit_name)
+                partial_entries_graph.add_node(pair_b_debit_credit, account=pair_b_debit_credit_name)
+
+                # add graph debit and credit edge
+                partial_entries_graph.add_edge(pair_a_debit_credit, pair_b_debit_credit)
+
+            # save plot to plotting directory
+            filename = '{}_entire_graph_{}.png'.format(str(parameter['exp_timestamp']), str(posting_id).zfill(5))
+            self.vha.plot_entire_journal_entry_graph(parameter, entry_graph=partial_entries_graph, pos_nodes=pos_nodes, filename=filename)
 
     # prepare the feature and adjacency matrices
     def create_adj_feat_matrices(self, parameter, statistics, adjacencies, features, encoded_features):
@@ -635,7 +838,7 @@ class DataHandler(object):
                 # collect feature matrix -> line-item nodes x features
                 feat_matrices.append(feat_matrix)
 
-                # case: log adjacency matrix creation process
+            # case: log adjacency matrix creation process
                 if i % 1000 == 0:
 
                     # log configuration processing
@@ -925,7 +1128,7 @@ class DataHandler(object):
         return aggregated_entries
 
     # aggregate entries on belnr, and hkont level -> create feature matrices
-    def aggregate_entries_per_belnr(self, statistics, fields, entries):
+    def aggregate_entries_per_belnr(self, statistics, fields, entries, labels):
 
         # aggregate journal entry line items
         aggregated_entries = entries[fields + [statistics['je_line_item_field']]].groupby(fields).count()
@@ -935,6 +1138,15 @@ class DataHandler(object):
 
         # rename number of line items columns
         aggregated_entries = aggregated_entries.rename(columns={statistics['je_line_item_field']: 'Y_BUZEI'}, inplace=False)
+
+        # aggregate and collect journal entry accounts
+        aggregated_entries['Y_NO_ACCOUNTS'] = entries[[statistics['je_identifier_field']] + [statistics['je_gl_account_field']]].groupby([statistics['je_identifier_field']]).nunique().values
+
+        # aggregate journal entry labels
+        aggregated_labels = labels.groupby([statistics['je_identifier_field']] + [statistics['je_class_field']] + [statistics['je_class_name_field']]).count()
+
+        # reset the aggregation index
+        aggregated_labels = aggregated_labels.reset_index()
 
         # iterate over header attributes
         for header_feature in statistics['je_header_features']:
@@ -949,7 +1161,7 @@ class DataHandler(object):
             entries[segment_feature] = entries[segment_feature].astype(str)
 
             # case: je line item attribute
-            if segment_feature == 'Y_JE_ITEM_IDENTIFIER':
+            if segment_feature == statistics['je_identifier_field']:
 
                 # aggregate line item attributes
                 aggregated_entries[segment_feature] = entries.groupby(fields)[segment_feature].max().values
@@ -974,6 +1186,10 @@ class DataHandler(object):
 
             # trim aggregated line item attributes
             aggregated_entries[segment_feature] = summed_entries[segment_feature].values
+
+        # add label information
+        aggregated_entries[statistics['je_class_field']] = aggregated_labels[statistics['je_class_field']]
+        aggregated_entries[statistics['je_class_name_field']] = aggregated_labels[statistics['je_class_name_field']]
 
         # return aggregated entries
         return aggregated_entries
