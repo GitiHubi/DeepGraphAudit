@@ -49,7 +49,7 @@ def main():
     parser.add_argument('-max_line_items', help='', nargs='?', type=int, default=20)
     parser.add_argument('-no_global_anomalies', help='', nargs='?', type=int, default=10)
     parser.add_argument('-no_local_anomalies', help='', nargs='?', type=int, default=10)
-    parser.add_argument('-visualize', type=str, default='True', help='visualize graphs mode')  # static, dynamic
+    parser.add_argument('-visualize', type=str, default='False', help='visualize graphs mode')  # static, dynamic
 
     # model architecture parameter
     parser.add_argument('-seed', type=int, default=1111, help='seed value for deterministic results.')
