@@ -33,6 +33,7 @@ def main():
 
     # general experiment parameter
     parser.add_argument('-exp_timestamp', help='', nargs='?', type=str,  default=dt.datetime.utcnow().strftime('%Y-%m-%d_%H-%M-%S'))
+    parser.add_argument('-exp_series', help='', nargs='?', type=int, default=42)
     parser.add_argument('-experiment', help='', nargs='?', type=str,  default='graph_autoencoder')
     parser.add_argument('-data_dir', help='', nargs='?', type=str, default='./100_datasets')
     parser.add_argument('-base_dir', help='', nargs='?', type=str, default='./200_experiments')
@@ -46,6 +47,9 @@ def main():
     parser.add_argument('-sample_size', help='', nargs='?', type=int, default=501)
     parser.add_argument('-min_line_items', help='', nargs='?', type=int, default=2)
     parser.add_argument('-max_line_items', help='', nargs='?', type=int, default=20)
+    parser.add_argument('-no_global_anomalies', help='', nargs='?', type=int, default=10)
+    parser.add_argument('-no_local_anomalies', help='', nargs='?', type=int, default=10)
+    parser.add_argument('-visualize', type=str, default='True', help='visualize graphs mode')  # static, dynamic
 
     # model architecture parameter
     parser.add_argument('-seed', type=int, default=1111, help='seed value for deterministic results.')
@@ -68,7 +72,7 @@ def main():
     parser.add_argument('-beta', type=float, default=0.5, help='the loss regularizer.')
 
     # model evaluation parameter
-    parser.add_argument('-valid_iterations', type=int, default=1000, help='the eval training iteration.')
+    parser.add_argument('-valid_iterations', type=int, default=100, help='the eval training iteration.')
     parser.add_argument('-valid_batch_size', type=int, default=64, help='the evaluation batch size.')
     parser.add_argument('-wandb', type=str, default='True', help='enable wandb logging.')
 
@@ -102,6 +106,7 @@ def main():
 
     # parse boolean args as boolean
     experiment_parameter['grid'] = uha.str2bool(experiment_parameter['grid'])
+    experiment_parameter['visualize'] = uha.str2bool(experiment_parameter['visualize'])
     experiment_parameter['sample_eval'] = uha.str2bool(experiment_parameter['sample_eval'])
     experiment_parameter['wandb'] = uha.str2bool(experiment_parameter['wandb'])
 
