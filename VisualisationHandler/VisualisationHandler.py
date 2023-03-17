@@ -1,18 +1,26 @@
-# import class libraries
-import matplotlib as mpl
-import matplotlib.pyplot as plt
+# import python libraries
+import os
 import numpy as np
 import pandas as pd
+
+# import networkx
+import networkx as nx
+
+# import matplotlib libraries
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 import seaborn as sns
+
+# import plotly libraries
 import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
-import os
 
 mpl.rcParams['agg.path.chunksize'] = 1000000
 plt.rcParams['agg.path.chunksize'] = 1000000
 
-class VisualizationHandler(object):
+# class VisualisationHandler
+class VisualisationHandler(object):
 
     # define plain class constructor
     def __init__(self):
@@ -27,20 +35,29 @@ class VisualizationHandler(object):
         self.plot_dir = plot_dir
 
     # plot the learned embedding in the 2D latent space
-    def plot_embeddings_2d(self, data, z1_col_name, z2_col_name, filename, title):
+    def plot_embeddings_2d(self, data, z1_col_name, z2_col_name, c_col_name, filename, title):
 
         # set plotting appearance
         plt.style.use('seaborn')
-        # plt.rcParams['figure.figsize'] = [9, 11]  # width * height
         plt.rcParams['figure.figsize'] = [6, 6]  # width * height
         plt.rcParams['agg.path.chunksize'] = 1000000
-        sns.set_palette("tab20")
+        sns.set_palette("tab10")
 
         # init subplot
         fig, ax1 = plt.subplots(1, 1)
 
-        # scatter plot of embeddings
-        ax1.scatter(data[z1_col_name], data[z2_col_name], marker='o', edgecolors='w', s=14, linewidth=0.1)
+        # determine feature groups
+        attribute_values = data.groupby(c_col_name)
+        color_map = {'regular': 'C0', 'global': 'C1', 'local': 'C3'}
+        marker_map = {'regular': 'o', 'global': '^', 'local': '*'}
+        zorder = {'regular': 1, 'global': 2, 'local': 3}
+        size = {'regular': 12, 'global': 30, 'local': 30}
+
+        # iterate over feature groups
+        for attribute_name, attribute_value in attribute_values:
+
+            # scatter plot of embeddings
+            ax1.scatter(attribute_value[z1_col_name], attribute_value[z2_col_name], c=color_map[attribute_name], label=attribute_name, zorder=zorder[attribute_name], marker=marker_map[attribute_name],  s=size[attribute_name], edgecolors='w', linewidth=0.1)
 
         # set axis labels
         ax1.set_xlabel('[$z_1$]', fontsize=16)
@@ -49,8 +66,11 @@ class VisualizationHandler(object):
         # set tick fontsize
         ax1.tick_params(axis='both', which='major', labelsize=12)
 
+        # set legend
+        ax1.legend(fontsize=12, loc='upper right', fancybox=True, framealpha=0.5)
+
         # set plot header
-        ax1.set_title(title, fontsize=14)
+        ax1.set_title(title, fontsize=12)
 
         # set grid and tight plotting layout
         plt.grid(True)
@@ -61,6 +81,215 @@ class VisualizationHandler(object):
 
         # close plot
         plt.close()
+
+    # plot the learned embedding in the 2D latent space
+    def plot_embeddings_2d_error(self, data, z1_col_name, z2_col_name, c_col_name, filename, title):
+
+        # set plotting appearance
+        plt.style.use('seaborn')
+        # plt.rcParams['figure.figsize'] = [9, 11]  # width * height
+        plt.rcParams['figure.figsize'] = [6, 6]  # width * height
+        plt.rcParams['agg.path.chunksize'] = 1000000
+        cm = plt.cm.get_cmap('coolwarm')
+
+        # determine colorbar start and end range
+        range_end = data[c_col_name].mean() + 0.01 * data[c_col_name].std()
+
+        # init subplot
+        fig, ax1 = plt.subplots(1, 1)
+
+        # scatter plot of embeddings
+        plot = ax1.scatter(data[z1_col_name], data[z2_col_name], c=data[c_col_name], vmin=0.0, vmax=range_end, marker='o', edgecolors='w', s=14, linewidth=0.1, cmap=cm)
+
+        # set axis labels
+        ax1.set_xlabel('[$z_1$]', fontsize=16)
+        ax1.set_ylabel('[$z_2$]', fontsize=16)
+
+        # set tick fontsize
+        ax1.tick_params(axis='both', which='major', labelsize=12)
+
+        # set plot header
+        ax1.set_title(title, fontsize=12)
+
+        # set scatter plot colorbar
+        plt.colorbar(plot)
+
+        # set grid and tight plotting layout
+        plt.grid(True)
+        plt.tight_layout()
+
+        # save plot to plotting directory
+        plt.savefig(os.path.join(self.plot_dir, filename), dpi=300)
+
+        # close plot
+        plt.close()
+
+        # plot the learned embedding in the 2D latent space
+    def plot_embeddings_2d_anomalies(self, data, z1_col_name, z2_col_name, c_col_name, filename, title):
+
+        # set plotting appearance
+        plt.style.use('seaborn')
+        plt.rcParams['figure.figsize'] = [6, 6]  # width * height
+        plt.rcParams['agg.path.chunksize'] = 1000000
+        sns.set_palette("tab10")
+
+        # init subplot
+        fig, ax1 = plt.subplots(1, 1)
+
+        # determine feature groups
+        attribute_values = data.groupby(c_col_name)
+        color_map = {'1': 'C0', '-1': 'C3'}
+        marker_map = {'1': 'o', '-1': '*'}
+        zorder = {'1': 1, '-1': 2}
+        size = {'1': 12, '-1': 30}
+        label = {'1': 'regular', '-1': 'anomaly'}
+
+        # iterate over feature groups
+        for attribute_name, attribute_value in attribute_values:
+
+            # scatter plot of embeddings
+            ax1.scatter(attribute_value[z1_col_name], attribute_value[z2_col_name], c=color_map[str(attribute_name)], label=label[str(attribute_name)], zorder=zorder[str(attribute_name)], marker=marker_map[str(attribute_name)],  s=size[str(attribute_name)], edgecolors='w', linewidth=0.1)
+
+        # set axis labels
+        ax1.set_xlabel('[$z_1$]', fontsize=16)
+        ax1.set_ylabel('[$z_2$]', fontsize=16)
+
+        # set tick fontsize
+        ax1.tick_params(axis='both', which='major', labelsize=12)
+
+        # set legend
+        ax1.legend(fontsize=12, loc='upper right', fancybox=True, framealpha=0.5)
+
+        # set plot header
+        ax1.set_title(title, fontsize=12)
+
+        # set grid and tight plotting layout
+        plt.grid(True)
+        plt.tight_layout()
+
+        # save plot to plotting directory
+        plt.savefig(os.path.join(self.graph_plot_dir, filename), dpi=300)
+
+        # close plot
+        plt.close()
+
+    # plot single journal entry graph
+    def plot_single_journal_entry_graph(self, parameter, entry_graph, filename):
+
+        # define graph drawing options
+        nodes_draw_options = {
+            'node_color': 'orange'
+            , 'alpha': 0.8
+            , 'node_size': 400
+        }
+
+        # define graph drawing options
+        edges_draw_options = {
+            'edge_color': 'gray'
+            , 'width': 2
+            , 'alpha': 0.6
+            , 'arrowstyle': '-|>'
+        }
+
+        # set graph visualization layout
+        pos_nodes = nx.spring_layout(entry_graph)
+
+        # draw network nodes
+        nx.draw_networkx_nodes(entry_graph, pos_nodes, **nodes_draw_options)
+
+        # determine node attributes
+        node_attributes = nx.get_node_attributes(entry_graph, 'account')
+
+        # customize node attributes
+        custom_node_labels = {}
+        for node, attribute in node_attributes.items():
+            custom_node_labels[node] = str(node)
+
+        # draw network node labels
+        nx.draw_networkx_labels(entry_graph, pos_nodes, font_color='black', font_size=8, alpha=1.0)
+
+        # init and compute attribute positions
+        pos_attrs = {}
+        for node, coords in pos_nodes.items():
+            pos_attrs[node] = (coords[0] + 0.08, coords[1] + 0.08)
+
+        # customize node attributes
+        custom_node_attributes = {}
+        for node, attribute in node_attributes.items():
+            custom_node_attributes[node] = attribute.values[0]
+
+        # draw graph network labels
+        nx.draw_networkx_labels(entry_graph, pos_attrs, labels=custom_node_attributes, font_size=5, alpha=0.7)
+
+        # draw network edges
+        nx.draw_networkx_edges(entry_graph, pos_nodes, arrows=True, **edges_draw_options)
+
+        # remove black box around the plot
+        plt.box(False)
+
+        # save plot to plotting directory
+        plt.savefig(os.path.join(parameter['gra_sub_dir'], filename), dpi=100)
+
+        # close plot
+        plt.close()
+
+    # plot single journal entry graph
+    def plot_entire_journal_entry_graph(self, parameter, entry_graph, pos_nodes, filename):
+
+        # define graph drawing options
+        nodes_draw_options = {
+            'node_color': 'orange'
+            , 'alpha': 0.8
+            , 'node_size': 120
+        }
+
+        # define graph drawing options
+        edges_draw_options = {
+            'edge_color': 'gray'
+            , 'width': 1
+            , 'alpha': 0.6
+            , 'arrowstyle': '-|>'
+        }
+
+        # draw network nodes
+        nx.draw_networkx_nodes(entry_graph, pos_nodes, **nodes_draw_options)
+
+        # determine node attributes
+        node_attributes = nx.get_node_attributes(entry_graph, 'account')
+
+        # customize node attributes
+        custom_node_labels = {}
+        for node, attribute in node_attributes.items():
+            custom_node_labels[node] = str(node)
+
+        # draw network node labels
+        nx.draw_networkx_labels(entry_graph, pos_nodes, font_color='black', font_size=4, alpha=1.0)
+
+        # init and compute attribute positions
+        pos_attrs = {}
+        for node, coords in pos_nodes.items():
+            pos_attrs[node] = (coords[0] + 0.08, coords[1] + 0.08)
+
+        # customize node attributes
+        custom_node_attributes = {}
+        for node, attribute in node_attributes.items():
+            custom_node_attributes[node] = attribute.values[0]
+
+        # draw graph network labels
+        # nx.draw_networkx_labels(entry_graph, pos_attrs, labels=custom_node_attributes, font_size=5, alpha=0.7)
+
+        # draw network edges
+        nx.draw_networkx_edges(entry_graph, pos_nodes, arrows=True, **edges_draw_options)
+
+        # remove black box around the plot
+        plt.box(False)
+
+        # save plot to plotting directory
+        plt.savefig(os.path.join(parameter['gra_sub_dir'], filename), dpi=200)
+
+        # close plot
+        plt.close()
+
 
     # plot the learned embedding in the 2D latent space
     def plot_embeddings_2d_interval(self, data, z1_col_name, z2_col_name, c_col_name, filename, title, xlim=[15, 25], ylim=[-7.5, -12.5]):
@@ -348,7 +577,7 @@ class VisualizationHandler(object):
         plt.close()
 
     # plot the learned embedding in the 2D latent space
-    def plot_embeddings_2d_anomalies_score_interactive(self, data, hover, z1_col_name, z2_col_name, c_col_name, filename, title):
+    def plot_embeddings_2d_interactive(self, data, hover, z1_col_name, z2_col_name, c_col_name, filename, title):
 
         # set plotting appearance
         plt.style.use('seaborn')
@@ -357,15 +586,68 @@ class VisualizationHandler(object):
         plt.rcParams['agg.path.chunksize'] = 1000000
         # cm = plt.cm.get_cmap('RdYlBu')
 
+        # create regular entries scatter plot
+        trace1 = px.scatter(data
+                            , x=z1_col_name
+                            , y=z2_col_name
+                            , hover_data=hover
+                            , color=c_col_name
+                            , color_discrete_map={'regular': 'cornflowerblue', 'global': 'darkorange', 'local': 'red'}
+                            , symbol=c_col_name
+                            , symbol_sequence=['circle', 'diamond', 'star']
+                            )
+
+        # update embedding makers
+        trace1.update_traces(marker=dict(size=10, line=dict(width=1, color='white')), selector=dict(mode='markers'))
+
+        # add both scatter plots to figure
+        fig = go.Figure(data=trace1.data)
+
+        # update axis layout
+        fig.update_layout(
+            title=dict(text=title, font_size=28, x=0.5, y=0.95, xanchor='center')
+            , margin=dict(l=0, r=0, b=0, t=180, pad=0)
+            , xaxis_title='<b>[z1]</b>'
+            , xaxis=dict(titlefont=dict(size=26), tickfont=dict(size=18))
+            , yaxis_title='<b>[z2]</b>'
+            , yaxis=dict(titlefont=dict(size=26), tickfont=dict(size=18))
+            , legend_title_text='<b>Classes:</b>'
+            , legend={'traceorder': 'reversed'}
+        )
+
+        # set colorbar title
+        fig['layout']['hoverlabel']['bgcolor'] = 'white'
+
+        # save plot to plotting directory
+        fig.write_html(os.path.join(self.plot_dir, filename))
+
+        # close plot
+        plt.close()
+
+    # plot the learned embedding in the 2D latent space
+    def plot_embeddings_2d_error_interactive(self, data, hover, z1_col_name, z2_col_name, c_col_name, filename, title):
+
+        # set plotting appearance
+        plt.style.use('seaborn')
+        # plt.rcParams['figure.figsize'] = [9, 11]  # width * height
+        plt.rcParams['figure.figsize'] = [6, 6]  # width * height
+        plt.rcParams['agg.path.chunksize'] = 1000000
+        # cm = plt.cm.get_cmap('RdYlBu')
+
+        # determine colorbar start and end range
+        range_start = data['Y_REC_ERROR'].mean() - 0.01 * data['Y_REC_ERROR'].std()
+        range_end = data['Y_REC_ERROR'].mean() + 0.01 * data['Y_REC_ERROR'].std()
+
         # create scatter plot
         fig = px.scatter(data
                          , x=z1_col_name
                          , y=z2_col_name
-                         , color='Y_ANOMALY_LABEL'
+                         , color=c_col_name  # 'Y_ANOMALY_LABEL'
+                         , range_color=(range_start, range_end)
+                         , color_continuous_scale=px.colors.sequential.Bluered
                          , hover_data=hover
                          , marginal_x='histogram'
                          , marginal_y='histogram')
-
 
         # update axis layout
         fig.update_layout(
@@ -377,11 +659,68 @@ class VisualizationHandler(object):
             , yaxis=dict(titlefont=dict(size=26), tickfont=dict(size=18))
         )
 
+        # set colorbar title
+        fig['layout']['coloraxis']['colorbar']['title'] = '<b>Rec. Error</b>'
+        fig['layout']['coloraxis']['colorbar']['title']['font']['size'] = 26
+        fig['layout']['coloraxis']['colorbar']['tickfont']['size'] = 18
+        fig['layout']['hoverlabel']['bgcolor'] = 'white'
+
         # save plot to plotting directory
         fig.write_html(os.path.join(self.plot_dir, filename))
 
         # close plot
         plt.close()
+
+    # plot the learned embedding in the 2D latent space
+    def plot_embeddings_2d_anomalies_interactive(self, data, hover, z1_col_name, z2_col_name, c_col_name, filename, title):
+
+        # set plotting appearance
+        plt.style.use('seaborn')
+        # plt.rcParams['figure.figsize'] = [9, 11]  # width * height
+        plt.rcParams['figure.figsize'] = [6, 6]  # width * height
+        plt.rcParams['agg.path.chunksize'] = 1000000
+        # cm = plt.cm.get_cmap('RdYlBu')
+
+        data[c_col_name] = data[c_col_name].astype(str)
+
+        # create regular entries scatter plot
+        trace1 = px.scatter(data
+                            , x=z1_col_name
+                            , y=z2_col_name
+                            , hover_data=hover
+                            , color=c_col_name
+                            , color_discrete_map={'1': 'cornflowerblue', '-1': 'red'}
+                            , symbol=c_col_name
+                            , symbol_sequence=['star', 'circle']
+                            )
+
+        # update embedding makers
+        trace1.update_traces(marker=dict(size=10, line=dict(width=1, color='white')), selector=dict(mode='markers'))
+
+        # add both scatter plots to figure
+        fig = go.Figure(data=trace1.data)
+
+        # update axis layout
+        fig.update_layout(
+            title=dict(text=title, font_size=28, x=0.5, y=0.95, xanchor='center')
+            , margin=dict(l=0, r=0, b=0, t=180, pad=0)
+            , xaxis_title='<b>[z1]</b>'
+            , xaxis=dict(titlefont=dict(size=26), tickfont=dict(size=18))
+            , yaxis_title='<b>[z2]</b>'
+            , yaxis=dict(titlefont=dict(size=26), tickfont=dict(size=18))
+            , legend_title_text='<b>Classes:</b>'
+            , legend={'traceorder': 'reversed'}
+        )
+
+        # set colorbar title
+        fig['layout']['hoverlabel']['bgcolor'] = 'white'
+
+        # save plot to plotting directory
+        fig.write_html(os.path.join(self.plot_dir, filename))
+
+        # close plot
+        plt.close()
+
 
     # plot the learned embedding in the 2D latent space
     def plot_embeddings_2d_anomalies_cluster_interactive(self, data, hover, z1_col_name, z2_col_name, c_col_name, filename, title):
@@ -442,7 +781,7 @@ class VisualizationHandler(object):
             , yaxis_title='<b>[z2]</b>'
             , yaxis=dict(titlefont=dict(size=26), tickfont=dict(size=18))
             , legend_title_text='<b>Cluster</b>'
-            , legend={'traceorder':'reversed'}
+            , legend={'traceorder': 'reversed'}
         )
 
         # save plot to plotting directory
