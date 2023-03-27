@@ -3,17 +3,17 @@ import torch
 import torch.nn as nn
 
 # import project libraries
-import ModelHandler.GNNEncoder as GNNEncoder
-import ModelHandler.GNNDecoderDynamic as GNNDecoderDynamic
+import ModelHandler.Encoder as Encoder
+import ModelHandler.Decoder as Decoder
 
-# GNNAutoencoderDynamic class
-class GNNAutoencoderDynamic(nn.Module):
+# AutoencoderDynamic class
+class AutoencoderDynamic(nn.Module):
 
     # define class constructor
     def __init__(self, statistics, feat_embed_dim, encoder_dim, encoder_bottleneck, decoder_dim, decoder_output, bias=True, device='cpu'):
 
         # call super class constructor
-        super(GNNAutoencoderDynamic, self).__init__()
+        super(AutoencoderDynamic, self).__init__()
 
         # init dataset statistics
         self.statistics = statistics
@@ -21,44 +21,26 @@ class GNNAutoencoderDynamic(nn.Module):
         # init VAE feature embedding layers
         self.feat_embeddings = self.init_embedding_layers(feat_embed_dim)
 
-        # init VAE feature embeddin non-linearity
-        self.adj_sigmoid = nn.Sigmoid()
+        # init the encoder model
+        self.encoder = Encoder.Encoder(hidden_size=encoder_dim, bottleneck=encoder_bottleneck, bias=bias)
 
-        # init graph VAE encoder model
-        self.encoder = GNNEncoder.GNNEncoder(hidden_size=encoder_dim, bottleneck=encoder_bottleneck, bias=bias)
-
-        # init graph VAE decoder model
-        self.decoder = GNNDecoderDynamic.GNNDecoderDynamic(hidden_size=decoder_dim, output=decoder_output, bias=bias)
+        # init the decoder model
+        self.decoder = Decoder.Decoder(hidden_size=decoder_dim, output=decoder_output, bias=bias)
 
         # init embedding dimension
         self.device = device
 
-    # define graph VAE forward pass
-    def forward(self, feat_matrices, adj_matrices):
+    # define autoencoder model forward pass
+    def forward(self, input):
 
         # run encoder forward pass
-        z, mu, sigma = self.encoder(feat_matrices, adj_matrices)
-
-        # compute sigma sample
-        # sigma_sample = sigma.mul(0.5).exp_()
-
-        # determine random sample of epsilon
-        # eps = torch.autograd.Variable(torch.randn(sigma.size())).to(self.device)
-
-        # determine stochastic latent z sample
-        # z = eps * sigma_sample + mu
-
-        # scale up latent representation
-        z_tilde = z.repeat(adj_matrices.shape[1], 1)
-
-        # reconstruct adjacency matrix
-        rec_adj_matrices = self.adj_sigmoid(self.dot_product_decode(z_tilde).unsqueeze(0))
+        z = self.encoder(input)
 
         # run decoder forward pass
-        rec_feat_matrices = self.decoder(z_tilde.unsqueeze(0), rec_adj_matrices)
+        output = self.decoder(z)
 
-        # return reconstructed features and adjacency matrix
-        return z, mu, sigma, rec_feat_matrices, rec_adj_matrices
+        # return latent representation and output
+        return z, output
 
     def init_embedding_layers(self, embedding_dim):
 
@@ -132,19 +114,19 @@ class GNNAutoencoderDynamic(nn.Module):
             if feature in self.statistics['je_header_features']:
 
                 # determine values of current feature
-                feat_matrices_values = feat_matrices[:, :, i].type(torch.LongTensor).to(self.device)
+                feat_matrices_values = feat_matrices[:, i].type(torch.LongTensor).to(self.device)
 
             # case: je segment categorial feature
             elif feature in self.statistics['je_segment_features_categorical']:
 
                 # determine values of current feature
-                feat_matrices_values = feat_matrices[:, :, i].type(torch.LongTensor).to(self.device)
+                feat_matrices_values = feat_matrices[:, i].type(torch.LongTensor).to(self.device)
 
             # case: je segment numerical feature
             elif feature in self.statistics['je_segment_features_numerical']:
 
                 # determine values of current feature
-                feat_matrices_values = feat_matrices[:, :, i].unsqueeze(2).to(self.device)
+                feat_matrices_values = feat_matrices[:, i].unsqueeze(1).to(self.device)
 
             # determine linear embedding of current feature
             feat_matrices_embedding = self.feat_embeddings[i](feat_matrices_values)
@@ -162,16 +144,7 @@ class GNNAutoencoderDynamic(nn.Module):
             else:
 
                 # determine embedded features
-                feat_matrices_embeddings = torch.cat((feat_matrices_embeddings, feat_matrices_embedding), dim=2)
+                feat_matrices_embeddings = torch.cat((feat_matrices_embeddings, feat_matrices_embedding), dim=1)
 
         # return embedded features
         return feat_matrices_embeddings
-
-    # compute dot product
-    def dot_product_decode(self, z):
-
-        # compute dot product
-        dot_product = torch.matmul(z, z.t())
-
-        # return dot product
-        return dot_product

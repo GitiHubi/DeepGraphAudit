@@ -17,8 +17,11 @@ class GraphConvLayer(nn.Module):
         # init weight parameters
         nn.init.xavier_uniform_(self.linear.weight)
 
-        # init bias parameters
-        nn.init.constant_(self.linear.bias, 0.0)
+        # case: bias enabled
+        if bias:
+
+            # init bias parameters
+            nn.init.constant_(self.linear.bias, 0.0)
 
     # define forward pass
     def forward(self, x, adj):

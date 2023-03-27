@@ -81,7 +81,8 @@ class GNNEncoder(nn.Module):
                 x = self.bottleneck(self.layers[i](x, adj))
 
         # aggregate over all accounts into one-dimensional vector
-        z = torch.sum(x, 1)
+        # z = torch.sum(x, dim=1)
+        z = torch.mean(x, dim=1)
 
         # run VAE linear mu layer
         mu = self.linear_mu(z)

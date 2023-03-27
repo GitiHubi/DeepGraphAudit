@@ -1,15 +1,14 @@
 # import pytorch libraries
-import torch
 from torch import nn
 
-# import project library
+# import GNN Conv Layer
 from ModelHandler.GraphConvLayer import GraphConvLayer
 
-# define encoder class
+# define GNN decoder class
 class GNNDecoderDynamic(nn.Module):
 
     # define class constructor
-    def __init__(self, hidden_size, bottleneck, bias):
+    def __init__(self, hidden_size, output, bias):
 
         # call super class constructor
         super(GNNDecoderDynamic, self).__init__()
@@ -20,27 +19,27 @@ class GNNDecoderDynamic(nn.Module):
         # init layer leaky relu non linear activations
         self.activations = nn.LeakyReLU(negative_slope=0.4, inplace=True)
 
-        # case: linear bottleneck
-        if bottleneck == 'linear':
+        # case: linear output
+        if output == 'linear':
 
-            self.bottleneck = nn.Identity()
+            self.output = nn.Identity()
 
-        # case: leaky relu bottleneck
-        elif bottleneck == 'lrelu':
+        # case: leaky relu output
+        elif output == 'lrelu':
 
-            self.bottleneck = nn.LeakyReLU(negative_slope=0.4, inplace=True)
+            self.output = nn.LeakyReLU(negative_slope=0.4, inplace=True)
 
-        # case: tanh bottleneck
-        elif bottleneck == 'tanh':
+        # case: tanh output
+        elif output == 'tanh':
 
-            self.bottleneck = nn.Tanh()
+            self.output = nn.Tanh()
 
-        # case: sigmoid bottleneck
-        elif bottleneck == 'sigmoid':
+        # case: sigmoid output
+        elif output == 'sigmoid':
 
-            self.bottleneck = nn.Sigmoid()
+            self.output = nn.Sigmoid()
 
-    # init encoder layers
+    # init decoder layers
     def init_layers(self, layer_dimensions, bias):
 
         # init graph convolutional layers
@@ -61,7 +60,7 @@ class GNNDecoderDynamic(nn.Module):
         # return graph convolutional layers
         return layers
 
-    # define encoder forward pass
+    # define decoder forward pass
     def forward(self, x, adj):
 
         # iterate over distinct graph convolutional layers
@@ -77,7 +76,7 @@ class GNNDecoderDynamic(nn.Module):
             else:
 
                 # run forward pass through layer
-                x = self.bottleneck(self.layers[i](x, adj))
+                x = self.output(self.layers[i](x, adj))
 
-        # return VAE mu and VAE sigma
+        # return result
         return x
