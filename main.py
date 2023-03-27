@@ -23,6 +23,7 @@ from UtilsHandler import UtilsHandler
 # from ExperimentHandler import AutoencoderExperiment
 from ExperimentHandler import GraphAutoencoderExperimentStatic
 from GridSearchHandler import GridSearchHandler
+from ExperimentHandler import AutoencoderExperimentDynamic
 from ExperimentHandler import GraphAutoencoderExperimentDynamic
 
 # define main function
@@ -38,18 +39,18 @@ def main():
     parser.add_argument('-data_dir', help='', nargs='?', type=str, default='./100_datasets')
     parser.add_argument('-base_dir', help='', nargs='?', type=str, default='./200_experiments')
     parser.add_argument('-exp_postfix', type=str, default='test', help='postfix of experimental runs.')
-    parser.add_argument('-mode', type=str, default='dynamic', help='general experiment mode.')  # static, dynamic
-    parser.add_argument('-grid', type=str, default='True', help='grid experiment mode.')  # static, dynamic
+    parser.add_argument('-mode', type=str, default='dynamic', help='general experiment mode.')  # baseline, static, dynamic
+    parser.add_argument('-grid', type=str, default='False', help='grid experiment mode.')  # static, dynamic
 
     # data parameter
-    parser.add_argument('-dataset', help='', nargs='?', type=str,  default='sap') # ey, serpro, sap
+    parser.add_argument('-dataset', help='', nargs='?', type=str,  default='ey') # ey, serpro, sap
     parser.add_argument('-sample_eval', help='', nargs='?', type=str, default='False')
     parser.add_argument('-sample_size', help='', nargs='?', type=int, default=501)
     parser.add_argument('-min_line_items', help='', nargs='?', type=int, default=2)
     parser.add_argument('-max_line_items', help='', nargs='?', type=int, default=20)
     parser.add_argument('-no_global_anomalies', help='', nargs='?', type=int, default=10)
     parser.add_argument('-no_local_anomalies', help='', nargs='?', type=int, default=10)
-    parser.add_argument('-visualize', type=str, default='False', help='visualize graphs mode')  # static, dynamic
+    parser.add_argument('-visualize', type=str, default='True', help='visualize graphs mode')  # static, dynamic
 
     # model architecture parameter
     parser.add_argument('-seed', type=int, default=1111, help='seed value for deterministic results.')
@@ -62,7 +63,7 @@ def main():
     parser.add_argument('-lat_embed_dim', type=int, default=2, help='the dimension of the graph embeddings.')
 
     # model training parameter
-    parser.add_argument('-train_iterations', type=int, default=10001, help='the number of training iterations.')
+    parser.add_argument('-train_iterations', type=int, default=501, help='the number of training iterations.')
     parser.add_argument('-train_batch_size', type=int, default=64, help='the training batch size.')
     parser.add_argument('-loss', type=str, default='mse', help='the training and validation loss.')  # mse, bce
     parser.add_argument('-learning_rate', type=float, default=0.0001, help='the learning rate.')
@@ -238,6 +239,27 @@ def main():
                 exp = GraphAutoencoderExperimentDynamic.GraphAutoencoderExperimentDynamic()
 
                 # run dynamic GNN experiment
+                _ = exp.run_experiement(parameter=experiment_parameter, data_statistics=data_parameter)
+
+        # case: AEN experiment using dynamic adjacency and feature matrices
+        elif experiment_parameter['mode'] == 'baseline':
+
+            # case: grid search enabled
+            if experiment_parameter['grid'] == True:
+
+                # init dynamic AEN grid experiment
+                exp = GridSearchHandler.GridSearchHandler()
+
+                # run dynamic grid search AEN experiment
+                _ = exp.run_grid_search_experiment(parameter=experiment_parameter, data_statistics=data_parameter)
+
+            # case: non-grid search enabled
+            else:
+
+                # init dynamic AEN experiment
+                exp = AutoencoderExperimentDynamic.AutoencoderExperimentDynamic()
+
+                # run dynamic AEN experiment
                 _ = exp.run_experiement(parameter=experiment_parameter, data_statistics=data_parameter)
 
 # run main function
