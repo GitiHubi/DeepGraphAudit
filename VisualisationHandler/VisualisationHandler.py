@@ -25,17 +25,10 @@ class VisualisationHandler(object):
     # define plain class constructor
     def __init__(self):
 
-        # set plotting directory
-        self.plot_dir = ''
-
-    # set plot dir
-    def set_plot_dir(self, plot_dir):
-
-        # set plotting directory
-        self.plot_dir = plot_dir
+        pass
 
     # plot the learned embedding in the 2D latent space
-    def plot_embeddings_2d(self, data, z1_col_name, z2_col_name, c_col_name, filename, title):
+    def plot_embeddings_2d(self, parameter, data, z1_col_name, z2_col_name, c_col_name, filename, title):
 
         # set plotting appearance
         plt.style.use('seaborn')
@@ -77,13 +70,13 @@ class VisualisationHandler(object):
         plt.tight_layout()
 
         # save plot to plotting directory
-        plt.savefig(os.path.join(self.plot_dir, filename), dpi=300)
+        plt.savefig(os.path.join(parameter['vis_sub_dir'], filename), dpi=300)
 
         # close plot
         plt.close()
 
     # plot the learned embedding in the 2D latent space
-    def plot_embeddings_2d_error(self, data, z1_col_name, z2_col_name, c_col_name, filename, title):
+    def plot_embeddings_2d_error(self, parameter, data, z1_col_name, z2_col_name, c_col_name, filename, title):
 
         # set plotting appearance
         plt.style.use('seaborn')
@@ -119,13 +112,13 @@ class VisualisationHandler(object):
         plt.tight_layout()
 
         # save plot to plotting directory
-        plt.savefig(os.path.join(self.plot_dir, filename), dpi=300)
+        plt.savefig(os.path.join(parameter['vis_sub_dir'], filename), dpi=300)
 
         # close plot
         plt.close()
 
         # plot the learned embedding in the 2D latent space
-    def plot_embeddings_2d_anomalies(self, data, z1_col_name, z2_col_name, c_col_name, filename, title):
+    def plot_embeddings_2d_anomalies(self, parameter, data, z1_col_name, z2_col_name, c_col_name, filename, title):
 
         # set plotting appearance
         plt.style.use('seaborn')
@@ -168,7 +161,7 @@ class VisualisationHandler(object):
         plt.tight_layout()
 
         # save plot to plotting directory
-        plt.savefig(os.path.join(self.graph_plot_dir, filename), dpi=300)
+        plt.savefig(os.path.join(parameter['vis_sub_dir'], filename), dpi=300)
 
         # close plot
         plt.close()
@@ -180,7 +173,7 @@ class VisualisationHandler(object):
         nodes_draw_options = {
             'node_color': 'orange'
             , 'alpha': 0.8
-            , 'node_size': 400
+            , 'node_size': 1200
         }
 
         # define graph drawing options
@@ -206,7 +199,7 @@ class VisualisationHandler(object):
             custom_node_labels[node] = str(node)
 
         # draw network node labels
-        nx.draw_networkx_labels(entry_graph, pos_nodes, font_color='black', font_size=8, alpha=1.0)
+        nx.draw_networkx_labels(entry_graph, pos_nodes, font_color='black', font_size=16, alpha=1.0)
 
         # init and compute attribute positions
         pos_attrs = {}
@@ -219,7 +212,7 @@ class VisualisationHandler(object):
             custom_node_attributes[node] = attribute.values[0]
 
         # draw graph network labels
-        nx.draw_networkx_labels(entry_graph, pos_attrs, labels=custom_node_attributes, font_size=5, alpha=0.7)
+        nx.draw_networkx_labels(entry_graph, pos_attrs, labels=custom_node_attributes, font_size=10, alpha=0.7)
 
         # draw network edges
         nx.draw_networkx_edges(entry_graph, pos_nodes, arrows=True, **edges_draw_options)
@@ -332,7 +325,7 @@ class VisualisationHandler(object):
         plt.tight_layout()
 
         # save plot to plotting directory
-        plt.savefig(os.path.join(self.plot_dir, filename), dpi=300)
+        #plt.savefig(os.path.join(self.plot_dir, filename), dpi=300)
 
         # close plot
         plt.close()
@@ -454,7 +447,7 @@ class VisualisationHandler(object):
                 fig['layout']['xaxis{}'.format(str(i+2))]['title']='<b>[z1]</b>'
 
         # save plot to plotting directory
-        fig.write_html(os.path.join(self.plot_dir, filename))
+        #fig.write_html(os.path.join(self.plot_dir, filename))
 
         # close plot
         plt.close()
@@ -571,13 +564,13 @@ class VisualisationHandler(object):
                 fig['layout']['xaxis{}'.format(str(i+2))]['title']='<b>[z1]</b>'
 
         # save plot to plotting directory
-        fig.write_html(os.path.join(self.plot_dir, filename))
+        #fig.write_html(os.path.join(self.plot_dir, filename))
 
         # close plot
         plt.close()
 
     # plot the learned embedding in the 2D latent space
-    def plot_embeddings_2d_interactive(self, data, hover, z1_col_name, z2_col_name, c_col_name, filename, title):
+    def plot_embeddings_2d_interactive(self, parameter, data, hover, z1_col_name, z2_col_name, c_col_name, filename, title):
 
         # set plotting appearance
         plt.style.use('seaborn')
@@ -619,13 +612,13 @@ class VisualisationHandler(object):
         fig['layout']['hoverlabel']['bgcolor'] = 'white'
 
         # save plot to plotting directory
-        fig.write_html(os.path.join(self.plot_dir, filename))
+        fig.write_html(os.path.join(parameter['vis_sub_dir'], filename))
 
         # close plot
         plt.close()
 
     # plot the learned embedding in the 2D latent space
-    def plot_embeddings_2d_error_interactive(self, data, hover, z1_col_name, z2_col_name, c_col_name, filename, title):
+    def plot_embeddings_2d_error_interactive(self, parameter, data, hover, z1_col_name, z2_col_name, c_col_name, filename, title):
 
         # set plotting appearance
         plt.style.use('seaborn')
@@ -666,13 +659,13 @@ class VisualisationHandler(object):
         fig['layout']['hoverlabel']['bgcolor'] = 'white'
 
         # save plot to plotting directory
-        fig.write_html(os.path.join(self.plot_dir, filename))
+        fig.write_html(os.path.join(parameter['vis_sub_dir'], filename))
 
         # close plot
         plt.close()
 
     # plot the learned embedding in the 2D latent space
-    def plot_embeddings_2d_anomalies_interactive(self, data, hover, z1_col_name, z2_col_name, c_col_name, filename, title):
+    def plot_embeddings_2d_anomalies_interactive(self, parameter, data, hover, z1_col_name, z2_col_name, c_col_name, filename, title):
 
         # set plotting appearance
         plt.style.use('seaborn')
@@ -716,11 +709,10 @@ class VisualisationHandler(object):
         fig['layout']['hoverlabel']['bgcolor'] = 'white'
 
         # save plot to plotting directory
-        fig.write_html(os.path.join(self.plot_dir, filename))
+        fig.write_html(os.path.join(parameter['vis_sub_dir'], filename))
 
         # close plot
         plt.close()
-
 
     # plot the learned embedding in the 2D latent space
     def plot_embeddings_2d_anomalies_cluster_interactive(self, data, hover, z1_col_name, z2_col_name, c_col_name, filename, title):
@@ -785,7 +777,7 @@ class VisualisationHandler(object):
         )
 
         # save plot to plotting directory
-        fig.write_html(os.path.join(self.plot_dir, filename))
+        #fig.write_html(os.path.join(self.plot_dir, filename))
 
         # close plot
         plt.close()
