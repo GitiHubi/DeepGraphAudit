@@ -24,13 +24,13 @@ from UtilsHandler import UtilsHandler
 from DataHandler import DataHandler
 from AnomalyHandler import AnomalyHandler
 from EvaluationHandler import EvaluationHandler
-from DataHandler.AccountingGNNDatasetDynamic import AccountingGNNDatasetDynamic
-from ModelHandler import GNNAutoencoderDynamic
+from DataHandler.AccountingDatasetDynamic import AccountingDatasetDynamic
+from ModelHandler import AutoencoderDynamic
 from VisualisationHandler import VisualisationHandler
 from LoggingHandler import LoggingHandler
 
-# class GraphAutoencoderExperiment
-class GraphAutoencoderExperimentDynamic(object):
+# class AutoencoderExperiment
+class AutoencoderExperimentDynamic(object):
 
     # init class constructor
     def __init__(self):
@@ -60,10 +60,10 @@ class GraphAutoencoderExperimentDynamic(object):
         if parameter['wandb']:
 
             # init wandb logging
-            self.lha.init_wandb_run(project='DeepAppleGNN_{}_{}'.format(str(parameter['exp_series']).zfill(3), str(parameter['dataset'])), parameter=parameter)
+            self.lha.init_wandb_run(project='DeepAppleAEN_{}_{}'.format(str(parameter['exp_series']).zfill(3), str(parameter['dataset'])), parameter=parameter)
 
         # create experiment directory
-        parameter['exp_dir'], parameter['par_sub_dir'], parameter['sta_sub_dir'], parameter['res_sub_dir'], parameter['vis_sub_dir'], parameter['log_sub_dir'], parameter['gra_sub_dir'] = self.uha.create_experiment_directory(param=parameter, parent_dir=parameter['base_dir'], architecture='ae_graph')
+        parameter['exp_dir'], parameter['par_sub_dir'], parameter['sta_sub_dir'], parameter['res_sub_dir'], parameter['vis_sub_dir'], parameter['log_sub_dir'], parameter['gra_sub_dir'] = self.uha.create_experiment_directory(param=parameter, parent_dir=parameter['base_dir'], architecture='ae_baseline')
 
         # save experiment parameters
         self.uha.save_experiment_parameter(param=parameter, parameter_dir=parameter['par_sub_dir'])
@@ -84,7 +84,7 @@ class GraphAutoencoderExperimentDynamic(object):
             # pre-process the EY training data
             preprocessed_dataset = self.dha.preprocess_ey_data(statistics=data_statistics, dataset=original_dataset)
 
-        # case: sap dataset
+         # case: sap dataset
         elif parameter['dataset'] == 'sap':
 
             # load the SAP training data
@@ -102,29 +102,20 @@ class GraphAutoencoderExperimentDynamic(object):
             # load the Serpro training data
             posting_ids, adj_matrices, feat_matrices, aggregated_entries, data_statistics = self.dha.get_gnn_data_range_serpro(parameter=parameter, statistics=data_statistics)
 
-            # add graph anomalies to journal entry data
+        # add graph anomalies to journal entry data
         belnr_all_entries, belnr_all_entries_labels = self.dha.add_data_anomalies(parameter=parameter, statistics=data_statistics, dataset=preprocessed_dataset)
 
         # encode the general ledger account attribute
         belnr_all_entries[data_statistics['je_gl_account_field']] = pd.Categorical(belnr_all_entries[data_statistics['je_gl_account_field']]).codes
 
-        # aggregate training data
+        # aggregate EY training data
         belnr_hkont_shkzg_entries, belnr_hkont_entries, belnr_entries, data_statistics = self.dha.aggregate_data(statistics=data_statistics, data=belnr_all_entries, labels=belnr_all_entries_labels)
 
-        # encode training data
-        belnr_hkont_entries, belnr_hkont_entries_encoded, data_statistics = self.dha.encode_data_attributes(parameter=parameter, statistics=data_statistics, data=belnr_hkont_entries)
+        # encode EY training data
+        belnr_all_entries, belnr_all_entries_encoded, data_statistics = self.dha.encode_data_attributes(parameter=parameter, statistics=data_statistics, data=belnr_all_entries)
 
         # create the EY training adjacency and feature matrices
-        posting_ids, adj_matrices, feat_matrices, statistics = self.dha.create_adj_feat_matrices(parameter=parameter, statistics=data_statistics, adjacencies=belnr_hkont_shkzg_entries, features=belnr_hkont_entries, encoded_features=belnr_hkont_entries_encoded)
-
-        # case: graph visualization enabled
-        if parameter['visualize']:
-
-            # visualize journal entries graphs
-            self.dha.visualize_single_entries_graph(parameter=parameter, statistics=statistics, adjacencies=belnr_hkont_shkzg_entries, features=belnr_hkont_entries, encoded_features=belnr_hkont_entries_encoded)
-
-            # visualize journal entries graphs
-            self.dha.visualize_entire_entries_graph(parameter=parameter, statistics=statistics, adjacencies=belnr_hkont_shkzg_entries, features=belnr_hkont_entries, encoded_features=belnr_hkont_entries_encoded)
+        feat_vectors = self.dha.create_feat_vectors(statistics=data_statistics, data=belnr_all_entries_encoded)
 
         # log aggregated entries
         file_name = '{}_aggregated_entries_all_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['train_iterations']).zfill(6), str(parameter['exp_postfix']))
@@ -144,18 +135,18 @@ class GraphAutoencoderExperimentDynamic(object):
         parameter['decoder_dim'].insert(len(parameter['decoder_dim']), experiment_statistics['no_features'])
 
         # convert the training data to pytorch tensor
-        prepared_tensor_entries = AccountingGNNDatasetDynamic(adj_matrices=adj_matrices, feat_matrices=feat_matrices)
+        prepared_tensor_entries = AccountingDatasetDynamic(feat_vectors=feat_vectors)
 
         #### start training routine
 
-        # init the train data loader -> batch size == 1 due to dynamic adjacency matrices
+        # init the train data loader
         train_loader = DataLoader(prepared_tensor_entries, batch_size=1, shuffle=True, drop_last=False)
 
         # init the eval data loader
         eval_loader = DataLoader(prepared_tensor_entries, batch_size=1, shuffle=False, drop_last=False)
 
         # init the graph autoencoder model
-        model = GNNAutoencoderDynamic.GNNAutoencoderDynamic(
+        model = AutoencoderDynamic.AutoencoderDynamic(
             statistics=data_statistics
             , feat_embed_dim=parameter['feat_embed_dim']
             , encoder_dim=parameter['encoder_dim']
@@ -167,7 +158,7 @@ class GraphAutoencoderExperimentDynamic(object):
 
         # log configuration processing
         now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
-        print('[INFO {}] DeepAppleGraph :: GNN Autoencoder Model {}.'.format(now, str(model)))
+        print('[INFO {}] DeepAppleGraph :: Autoencoder Model {}.'.format(now, str(model)))
 
         # case: BCE loss training
         if parameter['loss'] == 'bce':
@@ -194,19 +185,37 @@ class GraphAutoencoderExperimentDynamic(object):
         scheduler = th.optim.lr_scheduler.StepLR(optimizer, step_size=int(parameter['train_iterations'] / parameter['learning_rate_steps']), gamma=0.1)
 
         # run the model training
-        model, experiment_statistics = self.run_model_training(parameter=parameter, data_statistics=data_statistics, experiment_statistics=experiment_statistics, model=model, rec_criterion=rec_criterion, rec_criterion_details=rec_criterion_details, train_loader=train_loader, eval_loader=eval_loader, optimizer=optimizer, scheduler=scheduler, aggregated_entries=belnr_entries)
+        model, experiment_statistics = self.run_model_training(parameter=parameter, data_statistics=data_statistics, experiment_statistics=experiment_statistics, model=model, rec_criterion=rec_criterion, rec_criterion_details=rec_criterion_details, train_loader=train_loader, eval_loader=eval_loader, optimizer=optimizer, scheduler=scheduler, belnr_entries=belnr_entries, belnr_all_entries=belnr_all_entries, belnr_all_entries_labels=belnr_all_entries_labels)
 
         #### start evaluation routine
 
         # run the model evaluation
-        belnr_entries, experiment_statistics = self.run_model_validation(parameter=parameter, data_statistics=data_statistics, experiment_statistics=experiment_statistics, model=model, rec_criterion=rec_criterion, rec_criterion_details=rec_criterion_details, eval_loader=eval_loader, aggregated_entries=belnr_entries)
+        belnr_all_entries, experiment_statistics = self.run_model_validation(parameter=parameter, data_statistics=data_statistics, experiment_statistics=experiment_statistics, model=model, rec_criterion=rec_criterion, rec_criterion_details=rec_criterion_details, eval_loader=eval_loader, aggregated_entries=belnr_all_entries)
+
+        # average reconstruction error per journal entry line item
+        belnr_error = belnr_all_entries[[data_statistics['je_identifier_field'], 'Y_REC_ERROR']].groupby(data_statistics['je_identifier_field']).sum()
+
+        # reset aggregation index
+        belnr_error = belnr_error.reset_index()
+
+        # merge belnr with average reconstruction error
+        belnr_entries['Y_REC_ERROR'] = belnr_error['Y_REC_ERROR']
 
         # determine model evaluation measures
         experiment_statistics = self.eha.compute_error_pr_auc_score(statistics=data_statistics, results=experiment_statistics, entries=belnr_entries)
         experiment_statistics = self.eha.compute_error_roc_auc_score(statistics=data_statistics, results=experiment_statistics, entries=belnr_entries)
 
         # run anomaly detection routine
-        experiment_statistics, aggregated_entries_belnr = self.aha.run_anomaly_detection(parameter=parameter, results=experiment_statistics, entries=belnr_entries)
+        experiment_statistics, belnr_all_entries = self.aha.run_anomaly_detection(parameter=parameter, results=experiment_statistics, entries=belnr_all_entries)
+
+        # average reconstruction error per journal entry line item
+        belnr_anomaly_score = belnr_all_entries[[data_statistics['je_identifier_field'], 'Y_ANOMALY_SCORE']].groupby(data_statistics['je_identifier_field']).sum()
+
+        # reset aggregation index
+        belnr_anomaly_score = belnr_anomaly_score.reset_index()
+
+        # merge belnr with average reconstruction error
+        belnr_entries['Y_ANOMALY_SCORE'] = belnr_anomaly_score['Y_ANOMALY_SCORE']
 
         # determine model evaluation measures
         experiment_statistics = self.eha.compute_density_pr_auc_score(statistics=data_statistics, results=experiment_statistics, entries=belnr_entries)
@@ -217,17 +226,14 @@ class GraphAutoencoderExperimentDynamic(object):
 
         # log aggregated entries
         file_name = '{}_aggregated_entries_selected_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['train_iterations']).zfill(6), str(parameter['exp_postfix']))
-        aggregated_entries_belnr.to_csv(os.path.join(parameter['res_sub_dir'], file_name), sep=',', encoding='utf-8')
+        belnr_entries.to_csv(os.path.join(parameter['res_sub_dir'], file_name), sep=',', encoding='utf-8')
 
         # log experiment results
         file_name = '{}_experiment_log_sd_{}_it_{}_{}.csv'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(parameter['train_iterations']).zfill(6), str(parameter['exp_postfix']))
         self.lha.save_experiment_log(parameter=parameter, experiment_statistics=experiment_statistics, directory=parameter['sta_sub_dir'], file_name=file_name)
 
-        # set visualization handler directory
-        self.vha.set_plot_dir(plot_dir=parameter['vis_sub_dir'])
-
         # run the model visualization
-        self.run_model_visualization(parameter=parameter, data_statistics=data_statistics, experiment_statistics=experiment_statistics, data=aggregated_entries_belnr, average_train_loss=experiment_statistics['average_train_loss'], average_valid_loss=experiment_statistics['average_valid_loss'], iteration=parameter['train_iterations'])
+        self.run_model_visualization(parameter=parameter, data_statistics=data_statistics, experiment_statistics=experiment_statistics, data=belnr_all_entries, labels=belnr_all_entries_labels, average_train_loss=experiment_statistics['average_train_loss'], average_valid_loss=experiment_statistics['average_valid_loss'], iteration=parameter['train_iterations'])
 
         # case: wandb logging enabled
         if parameter['wandb']:
@@ -239,20 +245,18 @@ class GraphAutoencoderExperimentDynamic(object):
         return experiment_statistics
 
     # run the model training
-    def run_model_training(self, parameter, data_statistics, experiment_statistics, model, rec_criterion, rec_criterion_details, train_loader, eval_loader, optimizer, scheduler, aggregated_entries):
+    def run_model_training(self, parameter, data_statistics, experiment_statistics, model, rec_criterion, rec_criterion_details, train_loader, eval_loader, optimizer, scheduler, belnr_entries, belnr_all_entries, belnr_all_entries_labels):
 
         # set model in train mode
         model.train()
 
         # init the training loss
         average_train_iteration_loss = 0.0
-        average_adj_train_iteration_loss = 0.0
         average_fea_train_iteration_loss = 0.0
 
         # init experiment loss statistics
         experiment_statistics['average_train_loss'] = 0.0
         experiment_statistics['average_fea_train_loss'] = 0.0
-        experiment_statistics['average_adj_train_loss'] = 0.0
 
         # init experiment error statistics
         experiment_statistics['error_roc_auc_all'] = 0.0
@@ -286,67 +290,43 @@ class GraphAutoencoderExperimentDynamic(object):
 
             # init the train batch loss
             train_batch_feat_rec_loss = th.tensor([0.0], requires_grad=True).to(parameter['device'])
-            train_batch_adj_rec_loss = th.tensor([0.0], requires_grad=True).to(parameter['device'])
 
             # iterate over mini-batch elements
             for k in range(0, parameter['train_batch_size']):
 
                 # get next training batch
-                adj_matrices_batch, feat_matrices_batch = next(iter(train_loader))
+                feat_input_batch = next(iter(train_loader))
 
                 # push the inputs and targets to compute device
-                adj_matrices_batch, feat_matrices_batch = adj_matrices_batch.to(parameter['device']), feat_matrices_batch.to(parameter['device'])
+                feat_input_batch = feat_input_batch.to(parameter['device'])
 
-                # determine feature embeddings
-                feat_matrices_batch = model.embedd_features_batch(feat_matrices_batch)
+                # determine inputs and targets feature embeddings
+                feat_input_batch = model.embedd_features_batch(feat_input_batch)
 
                 # run model forward pass
-                _, mu, sigma, feat_matrices_recon, adj_matrices_recon = model(feat_matrices_batch, adj_matrices_batch)
-
-                # init feature reconstruction loss
-                #train_batch_feat_rec_loss = th.zeros(1).to(parameter['device'])
-
-                # iterate over dataset features
-                #for k, feature in enumerate(data_statistics['je_features']):
-
-                    # determine original and reconstructed feature encodings
-                    #feat_matrices_batch_encodings = feat_matrices_batch[:, :, k * parameter['feat_embed_dim']: (k+1) * parameter['feat_embed_dim']]
-                    #feat_matrices_recon_encodings = feat_matrices_recon[:, :, k * parameter['feat_embed_dim']: (k+1) * parameter['feat_embed_dim']]
-
-                    # compute feature vector loss
-                    # train_batch_feat_rec_loss += rec_criterion(input=feat_matrices_recon_encodings, target=feat_matrices_batch_encodings)
+                _, feat_recon_batch = model(feat_input_batch)
 
                 # determine feature matrix normalization factor
-                feat_norm = feat_matrices_batch.shape[1] * feat_matrices_batch.shape[1] # / float((feat_matrices_batch.shape[1] * feat_matrices_batch.shape[1] - feat_matrices_batch.sum()) * 2)
+                feat_norm = feat_input_batch.shape[1] * feat_input_batch.shape[1] # / float((feat_matrices_batch.shape[1] * feat_matrices_batch.shape[1] - feat_matrices_batch.sum()) * 2)
 
                 # determine individual sample feature loss
-                train_sample_feat_rec_loss = rec_criterion(input=feat_matrices_recon, target=feat_matrices_batch) / feat_norm
+                train_sample_feat_rec_loss = rec_criterion(input=feat_recon_batch, target=feat_input_batch) / feat_norm
 
                 # compute feature vector loss
                 train_batch_feat_rec_loss = train_batch_feat_rec_loss + train_sample_feat_rec_loss
 
-                # determine adjacency matrix normalization factor
-                adj_norm = adj_matrices_batch.shape[1] * adj_matrices_batch.shape[1] # / float((adj_matrices_batch.shape[1] * adj_matrices_batch.shape[1] - adj_matrices_batch.sum()) * 2)
-
-                # determine individual sample adjacency loss
-                train_sample_adj_rec_loss = rec_criterion(input=adj_matrices_recon, target=adj_matrices_batch) / adj_norm
-
-                # compute adjacency matrix loss
-                train_batch_adj_rec_loss = train_batch_adj_rec_loss + train_sample_adj_rec_loss
-
             # compute train batch loss
-            train_batch_loss = (parameter['beta'] * train_batch_feat_rec_loss + (1.0 - parameter['beta']) * train_batch_adj_rec_loss) / parameter['train_batch_size']
+            train_batch_loss = 1.0 * train_batch_feat_rec_loss / parameter['train_batch_size']
 
             # determine average train batch loss
             average_train_batch_loss = train_batch_loss / parameter['train_batch_size']
             average_fea_train_batch_loss = train_batch_feat_rec_loss / parameter['train_batch_size']
-            average_adj_train_batch_loss = train_batch_adj_rec_loss / parameter['train_batch_size']
 
             # log training progress
             now = dt.datetime.utcnow().strftime('%m/%d/%Y %H:%M:%S')
             training_iterations.set_description(
                 (
-                    '[INFO {}] DeepAppleGraph :: train iteration: {}, lr: {}, av-batch-loss: {}, av-batch-feat-loss: {}, av-batch-adj-loss: {}'.format(str(now), str(i).zfill(2), str(np.round(optimizer.state_dict()['param_groups'][0]['lr'], 6)), str(np.round(average_train_batch_loss.cpu().detach().item(), 8)), str(np.round(average_fea_train_batch_loss.cpu().detach().item(), 8)), str(np.round(average_adj_train_batch_loss.cpu().detach().item(), 8)))
+                    '[INFO {}] DeepAppleGraph :: train iteration: {}, lr: {}, av-batch-loss: {}, av-batch-feat-loss: {}'.format(str(now), str(i).zfill(2), str(np.round(optimizer.state_dict()['param_groups'][0]['lr'], 6)), str(np.round(average_train_batch_loss.cpu().detach().item(), 8)), str(np.round(average_fea_train_batch_loss.cpu().detach().item(), 8)))
                 )
             )
 
@@ -362,30 +342,46 @@ class GraphAutoencoderExperimentDynamic(object):
             # compute and collect average reconstruction loss
             average_train_iteration_loss += average_train_batch_loss.cpu().detach().item()
             average_fea_train_iteration_loss += average_fea_train_batch_loss.cpu().detach().item()
-            average_adj_train_iteration_loss += average_adj_train_batch_loss.cpu().detach().item()
 
             # determine finale average losses per iteration
             experiment_statistics['average_train_loss'] = average_train_iteration_loss / (i + 1)
             experiment_statistics['average_fea_train_loss'] = average_fea_train_iteration_loss / (i + 1)
-            experiment_statistics['average_adj_train_loss'] = average_adj_train_iteration_loss / (i + 1)
             experiment_statistics['learning_rate'] = optimizer.state_dict()['param_groups'][0]['lr']
 
             # case: eval iteration
             if (i % parameter['valid_iterations'] == 0) and (i > 0):
 
                 # run model evaluation
-                aggregated_entries, experiment_statistics = self.run_model_validation(parameter, data_statistics, experiment_statistics, model, rec_criterion, rec_criterion_details, eval_loader, aggregated_entries)
+                belnr_all_entries, experiment_statistics = self.run_model_validation(parameter, data_statistics, experiment_statistics, model, rec_criterion, rec_criterion_details, eval_loader, belnr_all_entries)
+
+                # average reconstruction error per journal entry line item
+                belnr_error = belnr_all_entries[[data_statistics['je_identifier_field'], 'Y_REC_ERROR']].groupby(data_statistics['je_identifier_field']).sum()
+
+                # reset aggregation index
+                belnr_error = belnr_error.reset_index()
+
+                # merge belnr with average reconstruction error
+                belnr_entries['Y_REC_ERROR'] = belnr_error['Y_REC_ERROR']
 
                 # determine model error evaluation measures
-                experiment_statistics = self.eha.compute_error_roc_auc_score(statistics=data_statistics, results=experiment_statistics, entries=aggregated_entries)
-                experiment_statistics = self.eha.compute_error_pr_auc_score(statistics=data_statistics, results=experiment_statistics, entries=aggregated_entries)
+                experiment_statistics = self.eha.compute_error_roc_auc_score(statistics=data_statistics, results=experiment_statistics, entries=belnr_entries)
+                experiment_statistics = self.eha.compute_error_pr_auc_score(statistics=data_statistics, results=experiment_statistics, entries=belnr_entries)
 
                 # run anomaly detection routine
-                experiment_statistics, aggregated_entries = self.aha.run_anomaly_detection(parameter=parameter, results=experiment_statistics, entries=aggregated_entries)
+                experiment_statistics, belnr_all_entries = self.aha.run_anomaly_detection(parameter=parameter, results=experiment_statistics, entries=belnr_all_entries)
+
+                # average reconstruction error per journal entry line item
+                belnr_anomaly_score = belnr_all_entries[[data_statistics['je_identifier_field'], 'Y_ANOMALY_SCORE']].groupby(data_statistics['je_identifier_field']).sum()
+
+                # reset aggregation index
+                belnr_anomaly_score = belnr_anomaly_score.reset_index()
+
+                # merge belnr with average reconstruction error
+                belnr_entries['Y_ANOMALY_SCORE'] = belnr_anomaly_score['Y_ANOMALY_SCORE']
 
                 # determine model density evaluation measures
-                experiment_statistics = self.eha.compute_density_roc_auc_score(statistics=data_statistics, results=experiment_statistics, entries=aggregated_entries)
-                experiment_statistics = self.eha.compute_density_pr_auc_score(statistics=data_statistics, results=experiment_statistics, entries=aggregated_entries)
+                experiment_statistics = self.eha.compute_density_roc_auc_score(statistics=data_statistics, results=experiment_statistics, entries=belnr_entries)
+                experiment_statistics = self.eha.compute_density_pr_auc_score(statistics=data_statistics, results=experiment_statistics, entries=belnr_entries)
 
                 # determine current learning rate
                 experiment_statistics['learning_rate'] = optimizer.state_dict()['param_groups'][0]['lr']
@@ -395,7 +391,7 @@ class GraphAutoencoderExperimentDynamic(object):
                 self.lha.save_experiment_log(parameter=parameter, experiment_statistics=experiment_statistics, directory=parameter['sta_sub_dir'], file_name=file_name)
 
                 # run the result visualization
-                self.run_model_visualization(parameter=parameter, data_statistics=data_statistics, experiment_statistics=experiment_statistics, data=aggregated_entries, average_train_loss=experiment_statistics['average_train_loss'], average_valid_loss=experiment_statistics['average_valid_loss'], iteration=i)
+                self.run_model_visualization(parameter=parameter, data_statistics=data_statistics, experiment_statistics=experiment_statistics, data=belnr_all_entries, labels=belnr_all_entries_labels, average_train_loss=experiment_statistics['average_train_loss'], average_valid_loss=experiment_statistics['average_valid_loss'], iteration=i)
 
                 # save client model checkpoint
                 file_name = '{}_ae_gnn_model_checkpoint_itr_{}.pth'.format(parameter['exp_timestamp'], str(i).zfill(6))
@@ -418,7 +414,6 @@ class GraphAutoencoderExperimentDynamic(object):
 
         # init the validation loss
         average_valid_iteration_loss = 0.0
-        average_adj_valid_iteration_loss = 0.0
         average_fea_valid_iteration_loss = 0.0
 
         # init detailed validation reconstruction losses
@@ -428,7 +423,7 @@ class GraphAutoencoderExperimentDynamic(object):
         valid_embeddings = np.zeros([0])
 
         # determine number of valid iterations
-        no_batches = np.ceil(len(eval_loader.dataset.adj_matrices) / parameter['valid_batch_size'])
+        no_batches = np.ceil(len(eval_loader.dataset.feat_vectors) / parameter['valid_batch_size'])
 
         # init and wrap range of training iterations
         validation_iterations = tqdm(range(0, int(no_batches)))
@@ -447,55 +442,42 @@ class GraphAutoencoderExperimentDynamic(object):
 
                 # init the valid batch loss
                 valid_batch_feat_rec_loss = th.tensor([0.0], requires_grad=True).to(parameter['device'])
-                valid_batch_adj_rec_loss = th.tensor([0.0], requires_grad=True).to(parameter['device'])
 
                 # case: last (probably incomplete) batch reached
-                if (i == no_batches-1) and (len(eval_loader.dataset.adj_matrices) % parameter['valid_batch_size'] != 0):
+                if (i == no_batches-1) and (len(eval_loader.dataset.feat_vectors) % parameter['valid_batch_size'] != 0):
 
                     # update regular batch size
-                    batch_size = len(eval_loader.dataset.adj_matrices) % parameter['valid_batch_size']
+                    batch_size = len(eval_loader.dataset.feat_vectors) % parameter['valid_batch_size']
 
                 # iterate over mini-batch elements
                 for k in range(0, batch_size):
 
                     # get next training batch
-                    adj_matrices_batch, feat_matrices_batch = next(eval_iterator)
+                    feat_input_batch = next(eval_iterator)
 
-                    # push the inputs to compute device
-                    adj_matrices_batch, feat_matrices_batch = adj_matrices_batch.to(parameter['device']), feat_matrices_batch.to(parameter['device'])
+                    # push the inputs and targets to compute device
+                    feat_input_batch = feat_input_batch.to(parameter['device'])
 
-                    # determine feature embeddings
-                    feat_matrices_batch = model.embedd_features_batch(feat_matrices_batch)
+                    # determine inputs and targets feature embeddings
+                    feat_input_batch = model.embedd_features_batch(feat_input_batch)
 
                     # run model forward pass
-                    valid_embeddings_batch, _, _, feat_matrices_recon, adj_matrices_recon = model(feat_matrices_batch, adj_matrices_batch)
+                    valid_embeddings_batch, feat_recon_batch = model(feat_input_batch)
 
                     # determine feature matrix normalization factor
-                    feat_norm = feat_matrices_batch.shape[1] * feat_matrices_batch.shape[1] # / float((feat_matrices_batch.shape[1] * feat_matrices_batch.shape[1] - feat_matrices_batch.sum()) * 2)
+                    feat_norm = feat_input_batch.shape[1] * feat_input_batch.shape[1] # / float((feat_matrices_batch.shape[1] * feat_matrices_batch.shape[1] - feat_matrices_batch.sum()) * 2)
 
                     # compute feature vector loss
-                    valid_sample_feat_rec_loss = rec_criterion(input=feat_matrices_recon, target=feat_matrices_batch) / feat_norm
+                    valid_sample_feat_rec_loss = rec_criterion(input=feat_recon_batch, target=feat_input_batch) / feat_norm
 
                     # compute feature vector loss
                     valid_batch_feat_rec_loss = valid_batch_feat_rec_loss + valid_sample_feat_rec_loss
 
-                    # determine adjacency matrix normalization factor
-                    adj_norm = adj_matrices_batch.shape[1] * adj_matrices_batch.shape[1] # / float((adj_matrices_batch.shape[1] * adj_matrices_batch.shape[1] - adj_matrices_batch.sum()) * 2)
-
-                    # compute adjacency matrix loss
-                    valid_sample_adj_rec_loss = rec_criterion(input=adj_matrices_recon, target=adj_matrices_batch) / adj_norm
-
-                    # compute adjacency matrix loss
-                    valid_batch_adj_rec_loss = valid_batch_adj_rec_loss + valid_sample_adj_rec_loss
-
                     # compute feature vector loss details -> Todo: think about removing
-                    valid_batch_feat_rec_loss_details = rec_criterion_details(input=feat_matrices_recon, target=feat_matrices_batch).mean(axis=1).mean(axis=1) / feat_norm
-
-                    # compute adjacency matrix loss details -> Todo: think about removing
-                    valid_batch_adj_rec_loss_details = rec_criterion_details(input=adj_matrices_recon, target=adj_matrices_batch).mean(axis=1).mean(axis=1) / adj_norm
+                    valid_batch_feat_rec_loss_details = rec_criterion_details(input=feat_recon_batch, target=feat_input_batch).mean(axis=1) / feat_norm
 
                     # compute and add adjacency and feature reconstruction loss
-                    valid_batch_loss_details = parameter['beta'] * valid_batch_feat_rec_loss_details + (1.0 - parameter['beta']) * valid_batch_adj_rec_loss_details
+                    valid_batch_loss_details = 1.0 * valid_batch_feat_rec_loss_details
 
                     # case: initial batch
                     if valid_losses.shape[0] == 0:
@@ -516,18 +498,17 @@ class GraphAutoencoderExperimentDynamic(object):
                         valid_embeddings = np.vstack((valid_embeddings, valid_embeddings_batch.cpu().detach().numpy()))
 
                 # compute valid batch loss
-                valid_batch_loss = parameter['beta'] * valid_batch_feat_rec_loss + (1.0 - parameter['beta']) * valid_batch_adj_rec_loss
+                valid_batch_loss = 1.0 * valid_batch_feat_rec_loss / parameter['train_batch_size']
 
                 # determine average train batch loss
                 average_valid_batch_loss = valid_batch_loss / parameter['valid_batch_size']
                 average_fea_valid_batch_loss = valid_batch_feat_rec_loss / parameter['valid_batch_size']
-                average_adj_valid_batch_loss = valid_batch_adj_rec_loss / parameter['valid_batch_size']
 
                 # log validation progress
                 now = dt.datetime.utcnow().strftime('%m/%d/%Y %H:%M:%S')
                 validation_iterations.set_description(
                     (
-                        '[INFO {}] DeepAppleGraph :: valid iteration: {}, av-batch-loss: {}, av-batch-feat-loss: {}, av-batch-adj-loss: {}'.format(str(now), str(i).zfill(2), str(np.round(average_valid_batch_loss.cpu().detach().item(), 8)), str(np.round(average_fea_valid_batch_loss.cpu().detach().item(), 8)), str(np.round(average_adj_valid_batch_loss.cpu().detach().item(), 8)))
+                        '[INFO {}] DeepAppleGraph :: valid iteration: {}, av-batch-loss: {}, av-batch-feat-loss: {}'.format(str(now), str(i).zfill(2), str(np.round(average_valid_batch_loss.cpu().detach().item(), 8)), str(np.round(average_fea_valid_batch_loss.cpu().detach().item(), 8)))
                     )
                 )
 
@@ -540,12 +521,10 @@ class GraphAutoencoderExperimentDynamic(object):
             # compute and collect average reconstruction loss
             average_valid_iteration_loss += average_valid_batch_loss.cpu().detach().item()
             average_fea_valid_iteration_loss += average_fea_valid_batch_loss.cpu().detach().item()
-            average_adj_valid_iteration_loss += average_adj_valid_batch_loss.cpu().detach().item()
 
             # determine final average batch validation losses
             experiment_statistics['average_valid_loss'] = average_valid_iteration_loss / (i + 1)
             experiment_statistics['average_fea_valid_loss'] = average_fea_valid_iteration_loss / (i + 1)
-            experiment_statistics['average_adj_valid_loss'] = average_adj_valid_iteration_loss / (i + 1)
 
             # update journal entries with embedding
             aggregated_entries['Y_REC_ERROR'] = valid_losses
@@ -556,7 +535,10 @@ class GraphAutoencoderExperimentDynamic(object):
         return aggregated_entries, experiment_statistics
 
     # run the model and result visualization
-    def run_model_visualization(self, parameter, data_statistics, experiment_statistics, data, average_train_loss, average_valid_loss, iteration):
+    def run_model_visualization(self, parameter, data_statistics, experiment_statistics, data, labels, average_train_loss, average_valid_loss, iteration):
+
+        # merge data and labels
+        data[data_statistics['je_class_name_field']] = labels[data_statistics['je_class_name_field']]
 
         # visualize learned embeddings
         filename = '{}_1_1_je_embedding_sd_{}_it_{}_{}.png'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
