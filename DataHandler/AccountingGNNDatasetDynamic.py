@@ -1,7 +1,7 @@
 # import pytorch libraries
 from torch.utils import data
 
-# define accounting dataset
+# define GNN accounting dataset
 class AccountingGNNDatasetDynamic(data.Dataset):
 
     # define class constructor

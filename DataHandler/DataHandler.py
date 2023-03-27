@@ -103,121 +103,202 @@ class DataHandler(object):
         # return original and encoded transactions
         return processed_categorical_entries, aggregated_categorical_entries, prepared_categorical_entries, entries_statistics
 
-    def get_gnn_data_range_ey(self, parameter, statistics):
+    # load the EY training data
+    def load_ey_data(self, parameter):
 
         # case: sample evaluation enabled
         if parameter['sample_eval'] is True and parameter['dataset'].split('/')[-1] == 'ey':
 
             # read the transactional data
-            original_entries = pd.read_csv(os.path.join(parameter['data_dir'], '01_ernstyoung', 'Analytics_mindset_case_studies_PSU_Hotel_data_v1.csv'), sep=',', encoding='utf-8').iloc[0:parameter['sample_size'], :]
+            original_dataset = pd.read_csv(os.path.join(parameter['data_dir'], '01_ernstyoung', 'Analytics_mindset_case_studies_PSU_Hotel_data_v1.csv'), sep=',', encoding='utf-8').iloc[0:parameter['sample_size'], :]
 
         # case: sample evaluation not enbaled
         elif parameter['sample_eval'] is False and parameter['dataset'].split('/')[-1] == 'ey':
 
             # read the transactional data
-            original_entries = pd.read_csv(os.path.join(parameter['data_dir'], '01_ernstyoung', 'Analytics_mindset_case_studies_PSU_Hotel_data_v1.csv'), sep=',', encoding='utf-8')
+            original_dataset = pd.read_csv(os.path.join(parameter['data_dir'], '01_ernstyoung', 'Analytics_mindset_case_studies_PSU_Hotel_data_v1.csv'), sep=',', encoding='utf-8')
 
         # log configuration processing
         now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
-        print('[INFO {}] DataHandler :: {} transactional data of shape {} rows, {} columns, and belnr {}, successfully loaded.'.format(now, str(parameter['dataset']).upper(), str(original_entries.shape[0]), str(original_entries.shape[1]), str(len(original_entries['JEIdentifier'].unique()))))
+        print('[INFO {}] DataHandler :: {} transactional data of shape {} rows, {} columns, and belnr {}, successfully loaded.'.format(now, str(parameter['dataset']).upper(), str(original_dataset.shape[0]), str(original_dataset.shape[1]), str(len(original_dataset['JEIdentifier'].unique()))))
 
-        ### Step 1: Pre-process journal entries attribute values #####################################################
+        # return the transactional data
+        return original_dataset
+
+    # load the SAP training data
+    def load_sap_data(self, parameter):
+
+        # case: sample evaluation enabled
+        if parameter['sample_eval'] is True and parameter['dataset'].split('/')[-1] == 'sap':
+
+            # read the transactional data
+            original_dataset = pd.read_csv(os.path.join(parameter['data_dir'], '03_sap', '2023-01-27_SF_extract.csv'), sep=',', encoding='utf-8').iloc[0:parameter['sample_size'], :]
+
+        # case: sample evaluation not enbaled
+        elif parameter['sample_eval'] is False and parameter['dataset'].split('/')[-1] == 'sap':
+
+            # read the transactional data
+            original_dataset = pd.read_csv(os.path.join(parameter['data_dir'], '03_sap', '2023-01-27_SF_extract.csv'), sep=',', encoding='utf-8')
+
+        # log configuration processing
+        now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
+        print('[INFO {}] DataHandler :: {} transactional data of shape {} rows, {} columns, and belnr {}, successfully loaded.'.format(now, str(parameter['dataset']), str(original_dataset.shape[0]), str(original_dataset.shape[1]), str(len(original_dataset['DocumentNr'].unique()))))
+
+        # return the transactional data
+        return original_dataset
+
+    # pre-process the EY training data
+    def preprocess_ey_data(self, statistics, dataset):
 
         # processed journal entry attributes
-        processed_detailed_entries = pd.DataFrame({statistics['je_identifier_field']: original_entries['JEIdentifier'].astype(str)})
+        preprocessed_detailed_entries = pd.DataFrame({statistics['je_identifier_field']: dataset['JEIdentifier'].astype(str)})
 
         # pre-process the categorical journal entry attributes
         categorical_attributes = statistics['je_header_attributes'] + statistics['je_segment_attributes_categorical']
         categorical_features = statistics['je_header_features'] + statistics['je_segment_features_categorical']
-        processed_detailed_cat_entries = self.preprocess_ey_categorical_attributes(entries=original_entries, categorical_attributes=categorical_attributes, categorical_features=categorical_features)
+        preprocessed_detailed_cat_entries = self.preprocess_ey_categorical_attributes(entries=dataset, categorical_attributes=categorical_attributes, categorical_features=categorical_features)
 
         # pre-process the numerical journal entry attributes
         numerical_attributes = statistics['je_segment_attributes_numerical']
         numerical_features = statistics['je_segment_features_numerical']
-        processed_detailed_num_entries = self.preprocess_ey_numerical_attributes(entries=original_entries, numerical_attributes=numerical_attributes, numerical_features=numerical_features)
+        preprocessed_detailed_num_entries = self.preprocess_ey_numerical_attributes(entries=dataset, numerical_attributes=numerical_attributes, numerical_features=numerical_features)
 
         # combine pre-processed categorical and numerical attributes
-        processed_detailed_entries = pd.concat([processed_detailed_entries, processed_detailed_cat_entries, processed_detailed_num_entries], axis=1)
+        preprocessed_detailed_entries = pd.concat([preprocessed_detailed_entries, preprocessed_detailed_cat_entries, preprocessed_detailed_num_entries], axis=1)
 
-        ### Step 2: Create and add global/local anomalies ############################################################
+        # return pre-processed detailed entries
+        return preprocessed_detailed_entries
 
-        # init pre-processed, global and local anomaly entries
-        processed_detailed_entries_anomalies = processed_detailed_entries.copy(deep=True)
+    # pre-process the SAP training data
+    def preprocess_sap_data(self, statistics, dataset):
 
-        # add data class label
-        processed_detailed_entries_anomalies[statistics['je_class_field']] = 0
-        processed_detailed_entries_anomalies[statistics['je_class_name_field']] = 'regular'
+        # processed journal entry attributes
+        preprocessed_detailed_entries = pd.DataFrame({statistics['je_identifier_field']: dataset['DocumentNr'].astype(str)})
 
-        # create global graph anomalies
-        global_anomalies = self.aha.generate_global_graph_anomalies(statistics=statistics, entries=processed_detailed_entries, no_anomalies=parameter['no_global_anomalies'], seed=parameter['seed'])
+        # pre-process the categorical journal entry attributes
+        categorical_attributes = statistics['je_header_attributes'] + statistics['je_segment_attributes_categorical']
+        categorical_features = statistics['je_header_features'] + statistics['je_segment_features_categorical']
+        preprocessed_detailed_cat_entries = self.preprocess_sap_categorical_attributes(entries=dataset, categorical_attributes=categorical_attributes, categorical_features=categorical_features)
 
-        # create local graph anomalies
-        local_anomalies = self.aha.generate_local_graph_anomalies(statistics=statistics, entries=processed_detailed_entries, no_anomalies=parameter['no_local_anomalies'], seed=parameter['seed'])
+        # pre-process the numerical journal entry attributes
+        numerical_attributes = statistics['je_segment_attributes_numerical']
+        numerical_features = statistics['je_segment_features_numerical']
+        preprocessed_detailed_num_entries = self.preprocess_sap_numerical_attributes(entries=dataset, numerical_attributes=numerical_attributes, numerical_features=numerical_features)
 
-        # combine pre-processed, global and local anomaly entries
-        processed_detailed_entries_anomalies = pd.concat([processed_detailed_entries_anomalies, global_anomalies, local_anomalies], axis=0)
+        # combine pre-processed categorical and numerical attributes
+        preprocessed_detailed_entries = pd.concat([preprocessed_detailed_entries, preprocessed_detailed_cat_entries, preprocessed_detailed_num_entries], axis=1)
 
-        # determine pre-processed global and local anomaly entry class labels
-        processed_detailed_entries_labels = processed_detailed_entries_anomalies[[statistics['je_identifier_field']] + [statistics['je_gl_account_field']] + [statistics['je_class_field']] + [statistics['je_class_name_field']]]
+        # return pre-processed detailed entries
+        return preprocessed_detailed_entries
 
-        # remove pre-processed, global and local anomaly entry class label information
-        processed_detailed_entries = processed_detailed_entries_anomalies[processed_detailed_entries.columns]
+    # filter the SAP training data
+    def filter_sap_data(self, parameter, dataset):
 
-        ### Step 3: Encode general ledger account attribute ##########################################################
+        # aggregate journal entry line items
+        aggregated_original_entries = dataset[['DocumentNr', 'LineItem']].groupby(['DocumentNr']).count()
 
-        # encode general ledger account attribute
-        processed_detailed_entries[statistics['je_gl_account_field']] = pd.Categorical(processed_detailed_entries[statistics['je_gl_account_field']]).codes
+        # reset the aggregation index
+        aggregated_original_entries = aggregated_original_entries.reset_index()
 
-        ### Step 4: Aggregate journal entry attribute values #########################################################
+        # determine manual (non automated) journal entry postings
+        selected_belnr = aggregated_original_entries[(aggregated_original_entries['LineItem'] >= parameter['min_line_items']) & (aggregated_original_entries['LineItem'] <= parameter['max_line_items'])]['DocumentNr']
 
-        # aggregate journal entries on an account posting line item level (belnr, hkont, and shkzg) -> used to create the adjacency matrices
-        fields = [statistics['je_identifier_field']] + [statistics['je_gl_account_field']] + [statistics['je_line_item_field']] + [statistics['je_debit_credit_field']]
-        belnr_hkont_shkzg_entries = self.aggregate_entries_per_belnr_hkont_shkzg(statistics=statistics, fields=fields, entries=processed_detailed_entries)
-
-        # aggregate journal entries on an account posting level (belnr and hkont)  -> used to create the feature matrices
-        fields = [statistics['je_identifier_field']] + [statistics['je_gl_account_field']]
-        belnr_hkont_entries = self.aggregate_entries_per_belnr_hkont(statistics=statistics, fields=fields, entries=processed_detailed_entries)
-
-        # aggregate journal entries on belnr level -> used to visualize the results
-        fields = [statistics['je_identifier_field']]
-        belnr_entries = self.aggregate_entries_per_belnr(statistics=statistics, fields=fields, entries=processed_detailed_entries, labels=processed_detailed_entries_labels)
-
-        ### Step 5: Encode journal entry attribute values ####################################################
-
-        # determine unique posted journal entries
-        statistics['no_journal_entries'] = len(belnr_entries[statistics['je_identifier_field']].unique())
-
-        # determine unique posted accounts
-        statistics['no_posting_accounts'] = len(belnr_hkont_entries[statistics['je_gl_account_field']].unique())
-
-        # determine unique posted features
-        statistics['no_posting_features'] = len(statistics['je_features'])
-
-        # encode the pre-processed categorical transaction attributes
-        belnr_hkont_entries_encoded, statistics, belnr_hkont_entries = self.encode_je_attributes(parameter=parameter, statistics=statistics, entries=belnr_hkont_entries)
-
-        ### Step 6: Create feature and adjacency matrices ####################################################
-
-        # create the graph learning adjacency and feature matrices
-        posting_ids, adj_matrices, feat_matrices, statistics = self.create_adj_feat_matrices(parameter=parameter, statistics=statistics, adjacencies=belnr_hkont_shkzg_entries, features=belnr_hkont_entries, encoded_features=belnr_hkont_entries_encoded)
-
-        ### Step 7: Visualise journal entry graphs ###########################################################
-
-        # case: graph visualization enabled
-        if parameter['visualize']:
-
-            # visualize journal entries graphs
-            # self.visualize_single_entries_graph(parameter=parameter, statistics=statistics, adjacencies=belnr_hkont_shkzg_entries, features=belnr_hkont_entries, encoded_features=belnr_hkont_entries_encoded)
-
-            # visualize journal entries graphs
-            self.visualize_entire_entries_graph(parameter=parameter, statistics=statistics, adjacencies=belnr_hkont_shkzg_entries, features=belnr_hkont_entries, encoded_features=belnr_hkont_entries_encoded)
+        # filter for manual (non automated) journal entry postings
+        filtered_entries = dataset[dataset['DocumentNr'].isin(selected_belnr)]
 
         # log configuration processing
         now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
-        print('[INFO {}] DataHandler :: {} transactional data, {} adjacency matrices and {} feature matrices created.'.format(now, str(parameter['dataset']).upper(), str(len(adj_matrices)), str(len(feat_matrices))))
+        print('[INFO {}] DataHandler :: transactional {} data of shape {} rows, {} columns, and belnr {}, successfully loaded.'.format(now, str(parameter['dataset']).upper(), str(filtered_entries.shape[0]), str(filtered_entries.shape[1]), str(len(filtered_entries['DocumentNr'].unique()))))
 
-        # return original and encoded transactions
-        return posting_ids, adj_matrices, feat_matrices, belnr_hkont_entries, belnr_entries, statistics
+        # return filtered journal entries
+        return filtered_entries
+
+    # add anomalies to pre-processed data
+    def add_data_anomalies(self, parameter, statistics, dataset):
+
+        # init pre-processed, global and local anomaly entries
+        anomalies_detailed_entries = dataset.copy(deep=True)
+
+        # add data class label
+        anomalies_detailed_entries[statistics['je_class_field']] = 0
+        anomalies_detailed_entries[statistics['je_class_name_field']] = 'regular'
+
+        # create global graph anomalies
+        global_anomalies = self.aha.generate_global_graph_anomalies(statistics=statistics, entries=dataset, no_anomalies=parameter['no_global_anomalies'], seed=parameter['seed'])
+
+        # create local graph anomalies
+        local_anomalies = self.aha.generate_local_graph_anomalies(statistics=statistics, entries=dataset, no_anomalies=parameter['no_local_anomalies'], seed=parameter['seed'])
+
+        # combine pre-processed, global and local anomaly entries
+        anomalies_detailed_entries = pd.concat([anomalies_detailed_entries, global_anomalies, local_anomalies], axis=0)
+
+        # determine pre-processed global and local anomaly entry class labels
+        anomalies_detailed_entries_labels = anomalies_detailed_entries[[statistics['je_identifier_field']] + [statistics['je_gl_account_field']] + [statistics['je_class_field']] + [statistics['je_class_name_field']]]
+
+        # remove pre-processed, global and local anomaly entry class label information
+        anomalies_detailed_entries = anomalies_detailed_entries[dataset.columns]
+
+        # reset indexes upon anomaly entry injection
+        anomalies_detailed_entries.reset_index(inplace=True, drop=True)
+        anomalies_detailed_entries_labels.reset_index(inplace=True, drop=True)
+
+        # return anomalies dataset
+        return anomalies_detailed_entries, anomalies_detailed_entries_labels
+
+    # aggregate pre-processed data
+    def aggregate_data(self, statistics, data, labels):
+
+        # aggregate journal entries on an account posting line item level (belnr, hkont, and shkzg) -> used to create the adjacency matrices
+        fields = [statistics['je_identifier_field']] + [statistics['je_gl_account_field']] + [statistics['je_line_item_field']] + [statistics['je_debit_credit_field']]
+        belnr_hkont_shkzg_entries = self.aggregate_entries_per_belnr_hkont_shkzg(statistics=statistics, fields=fields, entries=data)
+
+        # aggregate journal entries on an account posting level (belnr and hkont)  -> used to create the feature matrices
+        fields = [statistics['je_identifier_field']] + [statistics['je_gl_account_field']]
+        belnr_hkont_entries = self.aggregate_entries_per_belnr_hkont(statistics=statistics, fields=fields, entries=data, labels=labels)
+
+        # aggregate journal entries on belnr level -> used to visualize the results
+        fields = [statistics['je_identifier_field']]
+        belnr_entries = self.aggregate_entries_per_belnr(statistics=statistics, fields=fields, entries=data, labels=labels)
+
+        # determine journal entry data statistics
+        statistics['no_journal_entries'] = len(belnr_entries[statistics['je_identifier_field']].unique())
+        statistics['no_posting_accounts'] = len(belnr_hkont_entries[statistics['je_gl_account_field']].unique())
+        statistics['no_posting_features'] = len(statistics['je_features'])
+
+        # return distinct aggregations
+        return belnr_hkont_shkzg_entries, belnr_hkont_entries, belnr_entries, statistics
+
+    # encode pre-processed data
+    def encode_data_attributes(self, parameter, statistics, data):
+
+        # encode journal entry header features
+        feat_header, statistics = self.encode_je_header_features(statistics=statistics, entries=data, type=parameter['encoder_type'])
+
+        # encoder journal entry segment features
+        feat_segment, statistics = self.encode_je_segment_features(statistics=statistics, entries=data, type=parameter['encoder_type'])
+
+        # combine journal entry header and segment features
+        features = pd.concat([feat_header, feat_segment], axis=1)
+
+        # drop duplicate identifier column
+        features = features.loc[:,~features.columns.duplicated()]
+
+        # return encoded features
+        return data, features, statistics
+
+    def create_feat_vectors(self, statistics, data):
+
+        # copy feature vectors
+        feat_vectors = data.copy(deep=True)
+
+        # filter for seleted journal entry features
+        feat_vectors = feat_vectors[statistics['je_features']]
+
+        # convert to numpy array
+        feat_vectors = feat_vectors.to_numpy().astype('float64')
+
+        # return feature vectors
+        return feat_vectors
 
     def get_gnn_data_range_sap(self, parameter, statistics):
 
@@ -659,8 +740,8 @@ class DataHandler(object):
                 pair_b_debit_credit = pair[1]
 
                 # determine pairs debit and credit account features
-                pair_a_debit_credit_name = posting_features[posting_features[statistics['je_gl_account_field']] == str(pair_a_debit_credit)]['Y_HKONT_TEXT']
-                pair_b_debit_credit_name = posting_features[posting_features[statistics['je_gl_account_field']] == str(pair_b_debit_credit)]['Y_HKONT_TEXT']
+                pair_a_debit_credit_name = posting_features[posting_features[statistics['je_gl_account_field']] == str(pair_a_debit_credit)]['Y_GL_ACCOUNT_NAME'] # ['Y_HKONT_TEXT']
+                pair_b_debit_credit_name = posting_features[posting_features[statistics['je_gl_account_field']] == str(pair_b_debit_credit)]['Y_GL_ACCOUNT_NAME'] # ['Y_HKONT_TEXT']
 
                 # add graph debit and credit nodes
                 entry_graph.add_node(pair_a_debit_credit, account=pair_a_debit_credit_name)
@@ -757,7 +838,7 @@ class DataHandler(object):
         # determine unique posting ids
         posting_ids = adjacencies.groupby([statistics['je_identifier_field']]).count().index
 
-        if parameter['mode'] == 'static':
+        if parameter['mode'] in ['static']:
 
             ### prepare adjacency matrix and feature vector filling
 
@@ -796,7 +877,7 @@ class DataHandler(object):
                     now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
                     print('[INFO {}] DataHandler :: {} adjacency and feature matrix: {} of: {} matrices created.'.format(now, str(statistics['dataset']).upper(), str(i), str(len(posting_ids))))
 
-        if parameter['mode'] == 'dynamic':
+        elif parameter['mode'] in ['dynamic', 'baseline']:
 
             # init adjacency and feature matrices
             adj_matrices = []
@@ -1006,7 +1087,7 @@ class DataHandler(object):
             else:
 
                 print('Hello World! - shouldn`t happen since we did aggregate before ...')
-                print('... but can happen due to incomplete postins -> check data quality.')
+                print('... but can happen due to incomplete postings -> check data quality.')
 
         # return feature matrix
         return feat_matrix
@@ -1069,7 +1150,7 @@ class DataHandler(object):
         return aggregated_entries
 
     # aggregate entries on belnr, and hkont level -> create feature matrices
-    def aggregate_entries_per_belnr_hkont(self, statistics, fields, entries):
+    def aggregate_entries_per_belnr_hkont(self, statistics, fields, entries, labels):
 
         # aggregate journal entry line items
         aggregated_entries = entries[fields].groupby(fields).count()
@@ -1080,7 +1161,11 @@ class DataHandler(object):
         # rename number of line items columns
         aggregated_entries = aggregated_entries.rename(columns={statistics['je_line_item_field']: 'Y_BUZEI'}, inplace=False)
 
-        # convert number of line items columns
+        # aggregate journal entry labels
+        aggregated_labels = labels.groupby([statistics['je_identifier_field']] + [statistics['je_gl_account_field']] + [statistics['je_class_field']] + [statistics['je_class_name_field']]).count()
+
+        # reset the aggregation index
+        aggregated_labels = aggregated_labels.reset_index()
 
         # iterate over header attributes
         for header_feature in statistics['je_header_features']:
@@ -1123,6 +1208,10 @@ class DataHandler(object):
 
             # trim aggregated line item attributes
             aggregated_entries[segment_feature] = summed_entries[segment_feature].values
+
+        # add label information
+        aggregated_entries[statistics['je_class_field']] = aggregated_labels[statistics['je_class_field']]
+        aggregated_entries[statistics['je_class_name_field']] = aggregated_labels[statistics['je_class_name_field']]
 
         # return aggregated entries
         return aggregated_entries

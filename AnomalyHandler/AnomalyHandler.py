@@ -11,9 +11,20 @@ print("NUMBER OF THREADS ARE LIMITED NOW ...")
 
 # import class libraries
 import numpy as np
-from scipy import stats
 import pandas as pd
 import random as rd
+
+# import scikit learn algorithms
+from sklearn.svm import OneClassSVM
+from sklearn.neighbors import LocalOutlierFactor
+from sklearn.ensemble import IsolationForest
+
+# import scikit learn utilities
+from sklearn.model_selection import RandomizedSearchCV
+from sklearn.metrics import make_scorer
+
+# import hdbscan library
+import hdbscan
 
 # class for generation of artificial anomalies
 class AnomalyHandler(object):
@@ -23,8 +34,12 @@ class AnomalyHandler(object):
 
         pass
 
-    # create global ey graph anomalies
-    def generate_global_graph_anomalies_ey(self, statistics, entries, top=20, n=10, seed=1111):
+    # create global graph anomalies
+    def generate_global_graph_anomalies(self, statistics, entries, top=20, no_anomalies=10, seed=1111):
+
+        # init stochastic random samplers
+        np.random.seed(seed + 1)  # +1 to differentiate random global and local anomalies
+        rd.seed(seed + 1) # +1 to differentiate random global and local anomalies
 
         # aggregate journal entry feature information per entry
         entries_aggregated = self.aggregate_entries_per_belnr(statistics, fields=[statistics['je_identifier_field']] + statistics['je_header_features'], entries=entries)
@@ -38,163 +53,104 @@ class AnomalyHandler(object):
         # filter top-n most occurring journal entry feature combinations
         entries_aggregated_top_feature_combinations = entries_aggregated_top_feature_combinations[statistics['je_header_features'] + statistics['je_segment_features_categorical']]
 
-        # determine random top-n occurring journal entry feature combination
-        single_random_top_feature_combination = dict(entries_aggregated_top_feature_combinations.iloc[np.random.choice(list(range(0, top)))])
+        # init data frame of created global anomalies
+        global_anomalies = pd.DataFrame(columns=entries.columns)
 
-        # determine aggregated entries of random top-n journal entry feature combination
-        entries_aggregated_single_random_top_feature_combination = entries_aggregated[entries_aggregated[single_random_top_feature_combination.keys()].isin(single_random_top_feature_combination.values()).all(axis=1)]
+        # randomly sample top-n most occurring journal entry feature combinations
+        anomaly_samples_ids = np.random.choice(list(range(0, top)), size=no_anomalies, replace=False)
 
-        # select entry ids of random top-n journal entry feature combination
-        entries_aggregated_single_random_top_feature_combination_ids = entries_aggregated_single_random_top_feature_combination[statistics['je_identifier_field']]
+        # iterate over number of to be created anomalies
+        for anomaly_sample_id in anomaly_samples_ids:
 
-        # select random entry id of random top-n journal entry feature combination
-        entries_aggregated_single_random_top_feature_combination_id = entries_aggregated_single_random_top_feature_combination_ids.iloc[np.random.choice(list(range(0, len(entries_aggregated_single_random_top_feature_combination_ids))))]
+            # determine random top-n occurring journal entry feature combination
+            single_random_top_feature_combination = dict(entries_aggregated_top_feature_combinations.iloc[anomaly_sample_id])
 
-        # determine single random entry of random top-n journal entry feature combination
-        single_random_top_feature_combination_entry = entries[entries[statistics['je_identifier_field']] == entries_aggregated_single_random_top_feature_combination_id]
+            # determine aggregated entries of random top-n journal entry feature combination
+            entries_aggregated_single_random_top_feature_combination = entries_aggregated[entries_aggregated[single_random_top_feature_combination.keys()].isin(single_random_top_feature_combination.values()).all(axis=1)]
 
-        # create random gl accounts
-        single_random_top_feature_combination_entry[statistics['je_gl_account_field']] = [rd.randint(9000, 9999) for ele in single_random_top_feature_combination_entry[statistics['je_gl_account_field']]]
+            # select entry ids of random top-n journal entry feature combination
+            entries_aggregated_single_random_top_feature_combination_ids = entries_aggregated_single_random_top_feature_combination[statistics['je_identifier_field']]
 
+            # select random entry id of random top-n journal entry feature combination
+            entries_aggregated_single_random_top_feature_combination_id = entries_aggregated_single_random_top_feature_combination_ids.iloc[np.random.choice(list(range(0, len(entries_aggregated_single_random_top_feature_combination_ids))))]
 
-        def get_sub_obj():
-            return str(np.random.randint(low=800, high=999))
+            # determine single random entry of random top-n journal entry feature combination
+            single_random_top_feature_combination_entry = entries[entries[statistics['je_identifier_field']] == entries_aggregated_single_random_top_feature_combination_id]
 
-        def get_document_no():
-            return str('PHIL') + str(np.random.randint(low=0, high=99999999)).zfill(8)
+            # update single random entry with random gl account numbers
+            single_random_top_feature_combination_entry[statistics['je_gl_account_field']] = [rd.randint(90000, 99999) for ele in single_random_top_feature_combination_entry[statistics['je_gl_account_field']]]
 
-        def get_dept():
-            return np.random.randint(low=75, high=99)
+            # update single random entry with new journal entry identifier column
+            single_random_top_feature_combination_entry[statistics['je_identifier_field']] = ['AG' + str(ele) for ele in single_random_top_feature_combination_entry[statistics['je_identifier_field']]]
 
-        def get_char():
-            return np.random.choice([1, 8, 9])
+            # collect created global anomaly
+            global_anomalies = global_anomalies.append(single_random_top_feature_combination_entry, ignore_index=True)
 
-        def get_fm():
-            return np.random.choice([13, 14, 15, 16])
-
-        def get_vendor_name():
-            return self.fake.company() + ' ' + self.fake.company_suffix()
-
-        def get_doc_ref_no_prefix():
-            return ''.join([self.fake.random_uppercase_letter() for _ in range(4)])
-
-        def get_contract_number():
-            return ''.join([self.fake.random_uppercase_letter() for _ in range(2)]) + str(np.random.randint(low=1, high=9999)).zfill(4)
-
-        def get_amount():
-            return np.random.choice([np.random.randint(low=-100000, high=-5000) - np.random.random(), np.random.randint(low=1000000, high=99999999) + np.random.random()])
-
-        # init random seed
-        np.random.seed(self.seed)
-
-        # init global anomalies
-        global_anomalies = []
-
-        # iterate over number of samples
-        for i in range(n):
-
-            # sample single global anomaly
-            sample = {'sub_obj': get_sub_obj(),
-                      'document_no': get_document_no(),
-                      'dept': get_dept(),
-                      'char_': get_char(),
-                      'fm': get_fm(),
-                      'vendor_name': get_vendor_name(),
-                      'doc_ref_no_prefix': get_doc_ref_no_prefix(),
-                      'contract_number': get_contract_number(),
-                      'transaction_amount': get_amount(),
-                      'TYPE': 'global',
-                      'CLASS': 1}
-
-            # collect sampled random global anomaly
-            global_anomalies.append(sample)
-
-        # convert all global anomalies to pandas data frame
-        global_anomalies = pd.DataFrame(global_anomalies)
-
-        # check if global anomalies are not in original dataset
-        for i, global_anomaly in global_anomalies.iterrows():
-
-            # check for potential duplicates
-            df_tmp = self.dataset[(self.dataset['document_no'] == global_anomaly['document_no'])
-                                  & (self.dataset['sub_obj'] == global_anomaly['sub_obj'])
-                                  & (self.dataset['fm'] == global_anomaly['fm'])
-                                  & (self.dataset['dept'] == global_anomaly['dept'])
-                                  & (self.dataset['doc_ref_no_prefix'] == global_anomaly['doc_ref_no_prefix'])]
-
-            # case: no similar transactions found in original dataset
-            if not df_tmp.empty:
-
-                # raise exception
-                raise Exception('global outliers need to be executed with different seed')
+        # add global anomaly class label
+        global_anomalies[statistics['je_class_field']] = 1
+        global_anomalies[statistics['je_class_name_field']] = 'global'
 
         # return created global anomalies
         return global_anomalies
 
-    # generate local anomalies based on philadelphia dataset
-    def generate_local_graph_anomalies_ey(self, n=10, top_frequent_values=10):
+    # create local graph anomalies
+    def generate_local_graph_anomalies(self, statistics, entries, top=20, no_anomalies=10, seed=1111):
 
-        def get_amount(amount_mean, amount_std):
-            return abs(np.random.normal(amount_mean, amount_std, 1))[0]
+        # init stochastic random samplers
+        np.random.seed(seed + 2)  # +2 to differentiate random global and local anomalies
+        rd.seed(seed + 2)  # +2 to differentiate random global and local anomalies
 
-        # determine amount mean and variance
-        amount_mean = stats.mode(self.dataset['transaction_amount'])[0]
-        amount_std = np.std(self.dataset['transaction_amount']) / 400.0
+        # aggregate journal entry feature information per entry
+        entries_aggregated = self.aggregate_entries_per_belnr(statistics, fields=[statistics['je_identifier_field']] + statistics['je_header_features'], entries=entries)
 
-        # init random seed
-        np.random.seed(self.seed)
+        # determine journal entry feature information count
+        entries_aggregated_count = entries_aggregated.groupby(statistics['je_header_features'] + statistics['je_segment_features_categorical']).count().reset_index()
 
-        # init local anomalies
-        local_anomalies = []
+        # filter top-n most occurring journal entry feature combinations
+        entries_aggregated_top_feature_combinations = entries_aggregated_count.sort_values(by=statistics['je_identifier_field'], ascending=False).iloc[0:top]
 
-        # init local anomaly count
-        i = 0
+        # filter top-n most occurring journal entry feature combinations
+        entries_aggregated_top_feature_combinations = entries_aggregated_top_feature_combinations[statistics['je_header_features'] + statistics['je_segment_features_categorical']]
 
-        # iterate over number of local anomalies
-        while len(local_anomalies) < n:
+        # init data frame of created global anomalies
+        local_anomalies = pd.DataFrame(columns=entries.columns)
 
-            # init single local anomaly
-            sample = {}
+        # determine unique gl accounts evident in the original dataset
+        entries_gl_accounts = entries[statistics['je_gl_account_field']].unique()
 
-            # iterate over categorical attribute
-            for cat_attr in self.categorical_attributes:
+        # randomly sample top-n most occurring journal entry feature combinations
+        anomaly_samples_ids = np.random.choice(list(range(0, top)), size=no_anomalies, replace=False)
 
-                # select top most frequent values of this attribute
-                freq_values = self.dataset[cat_attr].value_counts().nlargest(top_frequent_values).index.tolist()
+        # iterate over number of to be created anomalies
+        for anomaly_sample_id in anomaly_samples_ids:
 
-                # sample from the most frequent values
-                sample[cat_attr] = np.random.choice(freq_values)
+            # determine random top-n occurring journal entry feature combination
+            single_random_top_feature_combination = dict(entries_aggregated_top_feature_combinations.iloc[anomaly_sample_id])
 
-            # add amount manually
-            sample['transaction_amount'] = get_amount(amount_mean=amount_mean, amount_std=amount_std)
-            sample['TYPE'] = 'local'
-            sample['CLASS'] = 1
+            # determine aggregated entries of random top-n journal entry feature combination
+            entries_aggregated_single_random_top_feature_combination = entries_aggregated[entries_aggregated[single_random_top_feature_combination.keys()].isin(single_random_top_feature_combination.values()).all(axis=1)]
 
-            # case: generated local anomaly is not in regular data
-            if self.dataset[(self.dataset['document_no'] == sample['document_no'])
-                            & (self.dataset['sub_obj'] == sample['sub_obj'])
-                            & (self.dataset['fm'] == sample['fm'])
-                            & (self.dataset['dept'] == sample['dept'])
-                            & (self.dataset['doc_ref_no_prefix'] == sample['doc_ref_no_prefix'])
-                            & (self.dataset['vendor_name'] == sample['vendor_name'])].empty:
+            # select entry ids of random top-n journal entry feature combination
+            entries_aggregated_single_random_top_feature_combination_ids = entries_aggregated_single_random_top_feature_combination[statistics['je_identifier_field']]
 
-                # append local anomaly
-                local_anomalies.append(sample)
+            # select random entry id of random top-n journal entry feature combination
+            entries_aggregated_single_random_top_feature_combination_id = entries_aggregated_single_random_top_feature_combination_ids.iloc[np.random.choice(list(range(0, len(entries_aggregated_single_random_top_feature_combination_ids))))]
 
-            # case: generated local anomaly is in regular data
-            else:
+            # determine single random entry of random top-n journal entry feature combination
+            single_random_top_feature_combination_entry = entries[entries[statistics['je_identifier_field']] == entries_aggregated_single_random_top_feature_combination_id]
 
-                # increase total count of to be generated anomalies
-                i += 1
+            # update single random entry with random gl account numbers evident in the original dataset
+            single_random_top_feature_combination_entry[statistics['je_gl_account_field']] = [entries_gl_accounts[rd.randint(0, len(entries_gl_accounts)-1)] for ele in single_random_top_feature_combination_entry[statistics['je_gl_account_field']]]
 
-                # print a warning if there are too many generated anomalies being rejected
-                if (i % 1000 == 0) and (i != 0):
+            # update single random entry with new journal entry identifier column
+            single_random_top_feature_combination_entry[statistics['je_identifier_field']] = ['AL' + str(ele) for ele in single_random_top_feature_combination_entry[statistics['je_identifier_field']]]
 
-                    # print anomaly generation result
-                    print('{} generated local anomalies were rejected -> consider another seed or increase top frequent values parameter'.format(i))
+            # collect created global anomaly
+            local_anomalies = local_anomalies.append(single_random_top_feature_combination_entry, ignore_index=True)
 
-        # convert to pandas data frame
-        local_anomalies = pd.DataFrame(local_anomalies)
+        # add global anomaly class label
+        local_anomalies[statistics['je_class_field']] = 2
+        local_anomalies[statistics['je_class_name_field']] = 'local'
 
         # return created local anomalies
         return local_anomalies
@@ -231,3 +187,161 @@ class AnomalyHandler(object):
 
         # return aggregated entries
         return aggregated_entries
+
+    # run hdbscan parameter grid search
+    def grid_search_hdbscan_parameter(self, parameter, aggregated_entries):
+
+        # init the hdbscan model
+        hdb = hdbscan.HDBSCAN(gen_min_span_tree=True).fit(aggregated_entries[['z1', 'z2']])
+
+        # specify the grid hdbscan grid search paramters
+        param_dist = {'min_samples': parameter['grid_min_samples'],
+                      'min_cluster_size': parameter['grid_min_cluster_size'],
+                      'cluster_selection_method': parameter['grid_cluster_selection_method'],
+                      'metric': parameter['grid_metric']
+                      }
+
+        # init grid search optimization criterion
+        validity_scorer = make_scorer(hdbscan.validity.validity_index, greater_is_better=True)
+
+        # init hdbscan parameter grid search
+        random_search = RandomizedSearchCV(hdb, param_distributions=param_dist, n_iter=20, scoring=validity_scorer, random_state=parameter['seed'], verbose=0)
+
+        # run hdbscan parameter grid search
+        random_search.fit(aggregated_entries[['z1', 'z2']])
+
+        # get hdbscan parameters
+        best_parameters = random_search.best_params_
+
+        # return best parameters
+        return best_parameters
+
+    # run latent space anomaly detection
+    def run_anomaly_detection(self, parameter, results, entries):
+
+        # init number of clusters
+        results['no_detected_clusters'] = 0
+
+        # init number of global and local anomalies
+        results['no_detected_global_anomalies'] = 0
+        results['no_detected_local_anomalies'] = 0
+
+        # init anomaly prediction
+        entries['Y_ANOMALY_CLASS'] = -1
+
+        # init anomaly score
+        entries['Y_ANOMALY_SCORE'] = 0.0
+
+        # init lof parameter
+        parameter['best_n_neighbors'] = -1
+        parameter['best_leaf_size'] = -1
+
+        # init hdbscan parameter
+        parameter['best_min_cluster_size'] = -1
+        parameter['best_min_samples'] = -1
+        parameter['best_metric'] = -1
+        parameter['best_cluster_selection_method'] = -1
+
+        # case: one-class svm anomaly detection
+        if parameter['algo'] == 'svm':
+
+            # init the one-class anomaly detection model
+            svm_model = OneClassSVM(kernel=parameter['kernel'], degree=parameter['degree'], gamma=parameter['gamma'])
+
+            # determine anomaly detection prediction
+            entries['Y_ANOMALY_CLASS'] = svm_model.fit_predict(entries[['z1', 'z2']])
+
+            # determine anomaly detection score
+            entries['Y_ANOMALY_SCORE'] = svm_model.score_samples(entries[['z1', 'z2']])
+
+        # case: local outlier factor anomaly detection
+        elif parameter['algo'] == 'lof':
+
+            # update best experiment parameter
+            parameter['best_n_neighbors'] = parameter['n_neighbors']
+            parameter['best_leaf_size'] = parameter['leaf_size']
+
+            # init the local outlier factor model
+            lof_model = LocalOutlierFactor(n_neighbors=parameter['n_neighbors'], leaf_size=parameter['leaf_size'])
+
+            # determine anomaly detection prediction
+            entries['Y_ANOMALY_CLASS'] = lof_model.fit_predict(entries[['z1', 'z2']])
+
+            # determine anomaly detection score
+            entries['Y_ANOMALY_SCORE'] = np.abs(lof_model.negative_outlier_factor_)
+
+        # case: isolation forest anomaly detection
+        elif parameter['algo'] == 'iforest':
+
+            # init the local outlier factor model
+            iforest_model = IsolationForest(random_state=0, n_estimators=100, max_samples=256)
+
+            # determine anomaly detection prediction
+            entries['Y_ANOMALY_CLASS'] = iforest_model.fit_predict(entries[['z1', 'z2']])
+
+            # determine anomaly detection score
+            entries['Y_ANOMALY_SCORE'] = iforest_model.score_samples(entries[['z1', 'z2']])
+
+        # case: isolation hdbscan anomaly detection
+        elif parameter['algo'] == 'hdbscan':
+
+            # grid search best hdbscan parameters
+            best_parameters = self.grid_search_hdbscan_parameter(parameter=parameter, aggregated_entries=entries)
+
+            # update experiment parameter
+            parameter['best_min_cluster_size'] = best_parameters['min_cluster_size']
+            parameter['best_min_samples'] = best_parameters['min_samples']
+            parameter['best_metric'] = best_parameters['metric']
+            parameter['best_cluster_selection_method'] = best_parameters['cluster_selection_method']
+
+            # init the hdbscan model with grid searched parameters
+            hdbscan_model = hdbscan.HDBSCAN(min_cluster_size=parameter['min_cluster_size'], min_samples=parameter['min_samples'], metric=parameter['metric'], cluster_selection_method=parameter['cluster_selection_method'])
+
+            # determine hdbscan clustering prediction
+            predictions = hdbscan_model.fit_predict(entries[['z1', 'z2']])
+
+            # determine anomaly detection score
+            scores = hdbscan_model.outlier_scores_
+
+            # replace potential nan values of the hdbscan anomaly score
+            scores = np.nan_to_num(scores)
+
+            # determine the anomaly score mean and standard deviation
+            scores_mean = scores.mean()
+            scores_std = scores.std()
+
+            # normalize anomaly detection score
+            scores = (scores - scores_mean) / scores_std
+
+            # determine top quantile anomaly threshold
+            anomaly_threshold = pd.Series(scores).quantile(0.99)
+
+            # determine anomaly detection prediction
+            predictions[np.where((scores >= anomaly_threshold) & (predictions != -1))[0]] = -2
+
+            # collect local outlier factor anomaly prediction results
+            entries['Y_ANOMALY_CLASS'] = predictions
+
+            # collect local outlier factor anomaly scores resultsß
+            entries['Y_ANOMALY_SCORE'] = scores
+
+            # collect local outlier factor anomaly prediction results
+            entries['Y_ANOMALY_LABEL'] = 'Regular'
+            entries['Y_ANOMALY_LABEL'] = np.where(entries['Y_ANOMALY_CLASS'] == -1, 'Global Anomaly', entries['Y_ANOMALY_LABEL'])
+            entries['Y_ANOMALY_LABEL'] = np.where(entries['Y_ANOMALY_CLASS'] == -2, 'Local Anomaly', entries['Y_ANOMALY_LABEL'])
+
+            # determine global anomalies
+            global_anomalies = entries[entries['Y_ANOMALY_CLASS'] == -1]
+
+            # determine local anomalies
+            local_anomalies = entries[entries['Y_ANOMALY_CLASS'] == -2]
+
+            # determine number of clusters
+            results['no_detected_clusters'] = int(len(entries['Y_ANOMALY_CLASS'].unique())-2)
+
+            # determine number of global and local anomalies
+            results['no_detected_global_anomalies'] = int(global_anomalies.shape[0])
+            results['no_detected_local_anomalies'] = int(local_anomalies.shape[0])
+
+        # return anomaly detection results
+        return results, entries
