@@ -86,7 +86,7 @@ def main():
     parser.add_argument('-algo', type=str, default='lof', help='the anomaly detection algorithm.') # lof, svm, iforest, hdbscan
     parser.add_argument('-kernel', type=str, default='rbf', help='the one-class svm kernel.')
     parser.add_argument('-degree', type=int, default=3, help='the one-class svm degree of the polynomial kernel function.')
-    parser.add_argument('-gamma', type=str, default='svm', help='the one-class svm kernel coefficient.')
+    parser.add_argument('-gamma', type=str, default='scale', help='the one-class svm kernel coefficient.') #'scale','auto'
     parser.add_argument('-n_neighbors', type=int, default=6, help='the number of LOF neighbors.')
     parser.add_argument('-leaf_size', type=int, default=30, help='the leaf size of LOF tree creation.')
 
