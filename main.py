@@ -83,13 +83,22 @@ def main():
     parser.add_argument('-grid_beta', nargs='+', default=[0.5, 0.1], help='the grid search seed.')
 
     # anomaly detection parameter
-    parser.add_argument('-algo', type=str, default='lof', help='the anomaly detection algorithm.') # lof, svm, iforest, hdbscan
+    parser.add_argument('-algo', type=str, default='lof', help='the anomaly detection algorithm.') # lof, ocsvm, iforest, knn, hbos
     parser.add_argument('-kernel', type=str, default='rbf', help='the one-class svm kernel.')
     parser.add_argument('-degree', type=int, default=3, help='the one-class svm degree of the polynomial kernel function.')
     parser.add_argument('-gamma', type=str, default='scale', help='the one-class svm kernel coefficient.') #'scale','auto'
     parser.add_argument('-n_neighbors', type=int, default=6, help='the number of LOF neighbors.')
     parser.add_argument('-leaf_size', type=int, default=30, help='the leaf size of LOF tree creation.')
+    parser.add_argument('-n_neighbors_knn', type=int, default=50, help='the number of knn neighbors.')
+    parser.add_argument('-leaf_size_knn', type=int, default=30, help='the leaf size of knn tree creation.')
 
+    # hdbscan grid search parameter
+    parser.add_argument('-min_cluster_size', nargs='+', default=50, help='')#[10, 50, 100, 200, 300, 400, 500, 600]
+    parser.add_argument('-min_samples', nargs='+', default= 30, help='') #[5, 10, 30, 50, 60, 100]
+    parser.add_argument('-metric', nargs='+', default='euclidean', help='') # ['euclidean', 'manhattan']
+    parser.add_argument('-cluster_selection_method', nargs='+', default='eom', help='') #['eom', 'leaf']
+
+    
     # hdbscan grid search parameter
     parser.add_argument('-grid_min_cluster_size', nargs='+', default=[10, 50, 100, 200, 300, 400, 500, 600], help='')
     parser.add_argument('-grid_min_samples', nargs='+', default=[5, 10, 30, 50, 60, 100], help='')
