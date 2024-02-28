@@ -15,9 +15,15 @@ import pandas as pd
 import random as rd
 
 # import scikit learn algorithms
-from sklearn.svm import OneClassSVM
-from sklearn.neighbors import LocalOutlierFactor
-from sklearn.ensemble import IsolationForest
+#from sklearn.svm import OneClassSVM
+#from sklearn.neighbors import LocalOutlierFactor
+#from sklearn.ensemble import IsolationForest
+from pyod.models.iforest import IForest
+from pyod.models.knn import KNN
+from pyod.models.hbos import HBOS
+from pyod.models.cblof import CBLOF
+from pyod.models.lof import LOF
+from pyod.models.ocsvm import OCSVM
 
 # import scikit learn utilities
 from sklearn.model_selection import RandomizedSearchCV
@@ -218,7 +224,7 @@ class AnomalyHandler(object):
 
     # run latent space anomaly detection
     def run_anomaly_detection(self, parameter, results, entries):
-
+        #QH revised 2/28/2024
         # init number of clusters
         results['no_detected_clusters'] = 0
 
@@ -243,44 +249,88 @@ class AnomalyHandler(object):
         parameter['best_cluster_selection_method'] = -1
 
         # case: one-class svm anomaly detection
-        if parameter['algo'] == 'svm':
+        if parameter['algo'] == 'ocsvm':
 
             # init the one-class anomaly detection model
-            svm_model = OneClassSVM(kernel=parameter['kernel'], degree=parameter['degree'], gamma=parameter['gamma'])
+            ocsvm_model = OCSVM()
+            ocsvm_model.fit(entries[['z1', 'z2']])
 
             # determine anomaly detection prediction
-            entries['Y_ANOMALY_CLASS'] = svm_model.fit_predict(entries[['z1', 'z2']])
+            entries['Y_ANOMALY_CLASS'] = ocsvm_model.labels_
 
             # determine anomaly detection score
-            entries['Y_ANOMALY_SCORE'] = svm_model.score_samples(entries[['z1', 'z2']])
+            entries['Y_ANOMALY_SCORE'] = ocsvm_model.decision_scores_
 
         # case: local outlier factor anomaly detection
         elif parameter['algo'] == 'lof':
 
             # update best experiment parameter
-            parameter['best_n_neighbors'] = parameter['n_neighbors']
-            parameter['best_leaf_size'] = parameter['leaf_size']
+            #parameter['best_n_neighbors'] = parameter['n_neighbors']
+            #parameter['best_leaf_size'] = parameter['leaf_size']
 
             # init the local outlier factor model
-            lof_model = LocalOutlierFactor(n_neighbors=parameter['n_neighbors'], leaf_size=parameter['leaf_size'])
+            lof_model = LOF()
+            lof_model.fit(entries[['z1', 'z2']])
 
             # determine anomaly detection prediction
-            entries['Y_ANOMALY_CLASS'] = lof_model.fit_predict(entries[['z1', 'z2']])
+            entries['Y_ANOMALY_CLASS'] = lof_model.labels_
 
             # determine anomaly detection score
-            entries['Y_ANOMALY_SCORE'] = np.abs(lof_model.negative_outlier_factor_)
+            entries['Y_ANOMALY_SCORE'] = lof_model.decision_scores_
 
         # case: isolation forest anomaly detection
         elif parameter['algo'] == 'iforest':
 
             # init the local outlier factor model
-            iforest_model = IsolationForest(random_state=0, n_estimators=100, max_samples=256)
+            iforest_model = IForest()
+            iforest_model.fit(entries[['z1', 'z2']])
 
             # determine anomaly detection prediction
-            entries['Y_ANOMALY_CLASS'] = iforest_model.fit_predict(entries[['z1', 'z2']])
+            entries['Y_ANOMALY_CLASS'] = iforest_model.labels_
 
             # determine anomaly detection score
-            entries['Y_ANOMALY_SCORE'] = iforest_model.score_samples(entries[['z1', 'z2']])
+            entries['Y_ANOMALY_SCORE'] = iforest_model.decision_scores_
+
+        elif parameter['algo'] == 'knn':
+
+            # init the local outlier factor model
+            knn_model = KNN(n_neighbors=parameter['n_neighbors_knn'], leaf_size=parameter['leaf_size_knn'])
+            knn_model.fit(entries[['z1', 'z2']])
+            #pred = knn_model.predict(entries[['z1', 'z2']])
+
+            # determine anomaly detection prediction
+            entries['Y_ANOMALY_CLASS'] = knn_model.labels_
+
+            # determine anomaly detection score
+            entries['Y_ANOMALY_SCORE'] = knn_model.decision_scores_
+
+        elif parameter['algo'] == 'hbos':
+
+            # init the local outlier factor model
+            hbos_model = HBOS()
+            hbos_model.fit(entries[['z1', 'z2']])
+            #pred = hbos_model.predict(entries[['z1', 'z2']])
+
+            # determine anomaly detection prediction
+            entries['Y_ANOMALY_CLASS'] = hbos_model.labels_
+
+            # determine anomaly detection score
+            entries['Y_ANOMALY_SCORE'] = hbos_model.decision_scores_
+
+        elif parameter['algo'] == 'cblof':
+
+            # init the local outlier factor model
+            cblof_model = CBLOF()
+            cblof_model.fit(entries[['z1', 'z2']])
+            #pred = cblof_model.predict(entries[['z1', 'z2']])
+
+            # determine anomaly detection prediction
+            entries['Y_ANOMALY_CLASS'] = cblof_model.labels_
+
+            # determine anomaly detection score
+            entries['Y_ANOMALY_SCORE'] = cblof_model.decision_scores_
+
+
 
         # case: isolation hdbscan anomaly detection
         elif parameter['algo'] == 'hdbscan':
