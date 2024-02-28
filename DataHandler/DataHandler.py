@@ -949,20 +949,22 @@ class DataHandler(object):
             if (pair_a_debit_credit == 'Credit') & (pair_b_debit_credit == 'Debit'):
 
                 # fill adjacency matrix: credit -> debit
-                adj_matrix[pair[0]][pair[1]] = 1
-
+                #adj_matrix[pair[0]][pair[1]] = 1
+                adj_matrix[pair[1]][pair[0]] = 1
+                
             # case: first account debit, second account credit
             elif (pair_a_debit_credit == 'Debit') & (pair_b_debit_credit == 'Credit'):
 
                 # fill adjacency matrix: debit -> credit
-                adj_matrix[pair[1]][pair[0]] = 1
+                #adj_matrix[pair[1]][pair[0]] = 1
+                adj_matrix[pair[0]][pair[1]] = 1
 
             # case: first account similar to second
             else:
 
-                # fill adjacency matrix
-                adj_matrix[pair[1]][pair[0]] = 1
-                adj_matrix[pair[0]][pair[1]] = 1
+                # fill adjacency matrix (QH revise)
+                #adj_matrix[pair[1]][pair[0]] = 1
+                #adj_matrix[pair[0]][pair[1]] = 1
 
         # return adjacency matrix
         return adj_matrix
@@ -990,20 +992,22 @@ class DataHandler(object):
             if (pair_a_debit_credit == 'Credit') & (pair_b_debit_credit == 'Debit'):
 
                 # fill adjacency matrix: credit -> debit
-                adj_matrix[pair[0]][pair[1]] = 1
+                #adj_matrix[pair[0]][pair[1]] = 1
+                adj_matrix[pair[1]][pair[0]] = 1
 
             # case: first account debit, second account credit
             elif (pair_a_debit_credit == 'Debit') & (pair_b_debit_credit == 'Credit'):
 
                 # fill adjacency matrix: debit -> credit
-                adj_matrix[pair[1]][pair[0]] = 1
+                #adj_matrix[pair[1]][pair[0]] = 1
+                adj_matrix[pair[0]][pair[1]] = 1
 
             # case: first account similar to second
             else:
 
-                # fill adjacency matrix
-                adj_matrix[pair[1]][pair[0]] = 1
-                adj_matrix[pair[0]][pair[1]] = 1
+                # fill adjacency matrix (QH revise 2/28/2024)
+                #adj_matrix[pair[1]][pair[0]] = 1
+                #adj_matrix[pair[0]][pair[1]] = 1
 
         # return adjacency matrix
         return adj_matrix
