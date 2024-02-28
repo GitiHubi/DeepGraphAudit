@@ -131,11 +131,11 @@ class VisualisationHandler(object):
 
         # determine feature groups
         attribute_values = data.groupby(c_col_name)
-        color_map = {'1': 'C0', '-1': 'C3'}
-        marker_map = {'1': 'o', '-1': '*'}
-        zorder = {'1': 1, '-1': 2}
-        size = {'1': 12, '-1': 30}
-        label = {'1': 'regular', '-1': 'anomaly'}
+        color_map = {'0': 'C0', '1': 'C3'}   #color_map = {'1': 'C0', '-1': 'C3'}
+        marker_map = {'0': 'o', '1': '*'}   #marker_map = {'1': 'o', '-1': '*'}
+        zorder = {'0': 1, '1': 2}          #zorder = {'1': 1, '-1': 2}
+        size = {'0': 12, '1': 30}         #size = {'1': 12, '-1': 30}
+        label = {'0': 'regular', '1': 'anomaly'}    # label = {'1': 'regular', '-1': 'anomaly'}
 
         # iterate over feature groups
         for attribute_name, attribute_value in attribute_values:
