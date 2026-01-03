@@ -224,7 +224,7 @@ class GraphAutoencoderExperimentDynamic(object):
         self.lha.save_experiment_log(parameter=parameter, experiment_statistics=experiment_statistics, directory=parameter['sta_sub_dir'], file_name=file_name)
 
         # set visualization handler directory
-        self.vha.set_plot_dir(plot_dir=parameter['vis_sub_dir'])
+        #self.vha.set_plot_dir(plot_dir=parameter['vis_sub_dir'])
 
         # run the model visualization
         self.run_model_visualization(parameter=parameter, data_statistics=data_statistics, experiment_statistics=experiment_statistics, data=aggregated_entries_belnr, average_train_loss=experiment_statistics['average_train_loss'], average_valid_loss=experiment_statistics['average_valid_loss'], iteration=parameter['train_iterations'])
@@ -271,6 +271,37 @@ class GraphAutoencoderExperimentDynamic(object):
         experiment_statistics['density_pr_auc_all'] = 0.0
         experiment_statistics['density_pr_auc_global'] = 0.0
         experiment_statistics['density_pr_auc_local'] = 0.0
+
+        experiment_statistics['od_accuracy_all'] = 0.0
+        experiment_statistics['od_precision_all'] = 0.0
+        experiment_statistics['od_recall_all'] = 0.0
+        experiment_statistics['od_f1_score_all'] = 0.0
+
+        experiment_statistics['od_accuracy_global'] = 0.0
+        experiment_statistics['od_precision_global'] = 0.0
+        experiment_statistics['od_recall_global'] = 0.0
+        experiment_statistics['od_f1_score_global'] = 0.0
+
+        experiment_statistics['od_accuracy_local'] = 0.0
+        experiment_statistics['od_precision_local'] = 0.0
+        experiment_statistics['od_recall_local'] = 0.0
+        experiment_statistics['od_f1_score_local'] = 0.0
+
+        # metrics for reconstruction error
+        experiment_statistics['re_accuracy_all'] = 0.0
+        experiment_statistics['re_precision_all'] = 0.0
+        experiment_statistics['re_recall_all'] = 0.0
+        experiment_statistics['re_f1_score_all'] = 0.0
+
+        experiment_statistics['re_accuracy_global'] = 0.0
+        experiment_statistics['re_precision_global'] = 0.0
+        experiment_statistics['re_recall_global'] = 0.0
+        experiment_statistics['re_f1_score_global'] = 0.0
+
+        experiment_statistics['re_accuracy_local'] = 0.0
+        experiment_statistics['re_precision_local'] = 0.0
+        experiment_statistics['re_recall_local'] = 0.0
+        experiment_statistics['re_f1_score_local'] = 0.0
 
         # push aggregated losses to compute device
         rec_criterion = rec_criterion.to(parameter['device'])
@@ -380,12 +411,15 @@ class GraphAutoencoderExperimentDynamic(object):
                 experiment_statistics = self.eha.compute_error_roc_auc_score(statistics=data_statistics, results=experiment_statistics, entries=aggregated_entries)
                 experiment_statistics = self.eha.compute_error_pr_auc_score(statistics=data_statistics, results=experiment_statistics, entries=aggregated_entries)
 
+
+
                 # run anomaly detection routine
                 experiment_statistics, aggregated_entries = self.aha.run_anomaly_detection(parameter=parameter, results=experiment_statistics, entries=aggregated_entries)
 
                 # determine model density evaluation measures
                 experiment_statistics = self.eha.compute_density_roc_auc_score(statistics=data_statistics, results=experiment_statistics, entries=aggregated_entries)
                 experiment_statistics = self.eha.compute_density_pr_auc_score(statistics=data_statistics, results=experiment_statistics, entries=aggregated_entries)
+                experiment_statistics = self.eha.compute_classification_metrics(statistics=data_statistics,results=experiment_statistics,entries=aggregated_entries)
 
                 # determine current learning rate
                 experiment_statistics['learning_rate'] = optimizer.state_dict()['param_groups'][0]['lr']
@@ -399,7 +433,7 @@ class GraphAutoencoderExperimentDynamic(object):
 
                 # save client model checkpoint
                 file_name = '{}_ae_gnn_model_checkpoint_itr_{}.pth'.format(parameter['exp_timestamp'], str(i).zfill(6))
-                # self.uha.save_client_model_checkpoint(filename=file_name, iteration=i, model=model, optimizer=optimizer, chpt_dir=parameter['log_sub_dir'])
+                #self.uha.save_client_model_checkpoint(filename=file_name, iteration=i, model=model, optimizer=optimizer, chpt_dir=parameter['log_sub_dir'])
 
             # case: wandb logging enabled
             if parameter['wandb']:
@@ -551,6 +585,7 @@ class GraphAutoencoderExperimentDynamic(object):
             aggregated_entries['Y_REC_ERROR'] = valid_losses
             aggregated_entries['z1'] = valid_embeddings[:, 0]
             aggregated_entries['z2'] = valid_embeddings[:, 1]
+            
 
         # return model evaluation results
         return aggregated_entries, experiment_statistics
@@ -601,14 +636,14 @@ class GraphAutoencoderExperimentDynamic(object):
         title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}<br>Anomaly-Algorithm: {}, Clusters: {}, Global-Anomalies: {}, Local-Anomalies: {}'.format(str(parameter['dataset']).upper(), str(iteration).zfill(6), str(np.round((average_train_loss / iteration), 6)), str(np.round((average_valid_loss / iteration), 6)), str(parameter['algo']).upper(), str(experiment_statistics['no_detected_clusters']), str(experiment_statistics['no_detected_global_anomalies']), str(experiment_statistics['no_detected_local_anomalies']))
         self.vha.plot_embeddings_2d_interactive(parameter=parameter, data=data, hover=data_statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name=data_statistics['je_class_name_field'], filename=filename, title=title)
 
-        # visualize learned embeddings interactively
+        # visualize learned embeddings interactively #comment these two line 12/04/2024, and uncomment on 1/9/2025
         filename = '{}_2_2_je_embedding_error_sd_{}_it_{}_{}_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
         title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}<br>Anomaly-Algorithm: {}, Clusters: {}, Global-Anomalies: {}, Local-Anomalies: {}'.format(str(parameter['dataset']).upper(), str(iteration).zfill(6), str(np.round((average_train_loss / iteration), 6)), str(np.round((average_valid_loss / iteration), 6)), str(parameter['algo']).upper(), str(experiment_statistics['no_detected_clusters']), str(experiment_statistics['no_detected_global_anomalies']), str(experiment_statistics['no_detected_local_anomalies']))
         self.vha.plot_embeddings_2d_error_interactive(parameter=parameter, data=data, hover=data_statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name='Y_REC_ERROR', filename=filename, title=title)
 
         # visualize learned embeddings interactively
-        filename = '{}_2_3_je_embedding_anomalies_sd_{}_it_{}_{}_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
-        title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}<br>Anomaly-Algorithm: {}, Clusters: {}, Global-Anomalies: {}, Local-Anomalies: {}'.format(str(parameter['dataset']).upper(), str(iteration).zfill(6), str(np.round((average_train_loss / iteration), 6)), str(np.round((average_valid_loss / iteration), 6)), str(parameter['algo']).upper(), str(experiment_statistics['no_detected_clusters']), str(experiment_statistics['no_detected_global_anomalies']), str(experiment_statistics['no_detected_local_anomalies']))
+        #filename = '{}_2_3_je_embedding_anomalies_sd_{}_it_{}_{}_interactive.html'.format(str(parameter['exp_timestamp']), str(parameter['seed']), str(iteration).zfill(6), str(parameter['exp_postfix']))
+        #title = '<b>GNN Autoencoder - Journal Entry Embedding Distribution</b><br>Dataset: {}, Train-Iterations: {}, Avg-Train-Loss: {}, Avg-Valid-Loss: {}<br>Anomaly-Algorithm: {}, Clusters: {}, Global-Anomalies: {}, Local-Anomalies: {}'.format(str(parameter['dataset']).upper(), str(iteration).zfill(6), str(np.round((average_train_loss / iteration), 6)), str(np.round((average_valid_loss / iteration), 6)), str(parameter['algo']).upper(), str(experiment_statistics['no_detected_clusters']), str(experiment_statistics['no_detected_global_anomalies']), str(experiment_statistics['no_detected_local_anomalies']))
         self.vha.plot_embeddings_2d_anomalies_interactive(parameter=parameter, data=data, hover=data_statistics['hover_attributes'], z1_col_name='z1', z2_col_name='z2', c_col_name='Y_ANOMALY_CLASS', filename=filename, title=title)
 
         # visualize learned embeddings interactively
