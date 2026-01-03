@@ -132,13 +132,13 @@ class DataHandler(object):
         if parameter['sample_eval'] is True and parameter['dataset'].split('/')[-1] == 'sap':
 
             # read the transactional data
-            original_dataset = pd.read_csv(os.path.join(parameter['data_dir'], '03_sap', '2023-01-27_SF_extract.csv'), sep=',', encoding='utf-8').iloc[0:parameter['sample_size'], :]
+            original_dataset = pd.read_csv(os.path.join(parameter['data_dir'], '03_sap', 'complete_file_4.csv'), sep=',', encoding='utf-8').iloc[0:parameter['sample_size'], :]
 
         # case: sample evaluation not enbaled
         elif parameter['sample_eval'] is False and parameter['dataset'].split('/')[-1] == 'sap':
 
             # read the transactional data
-            original_dataset = pd.read_csv(os.path.join(parameter['data_dir'], '03_sap', '2023-01-27_SF_extract.csv'), sep=',', encoding='utf-8')
+            original_dataset = pd.read_csv(os.path.join(parameter['data_dir'], '03_sap', 'complete_file_4.csv'), sep=',', encoding='latin-1')
 
         # log configuration processing
         now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
@@ -306,13 +306,13 @@ class DataHandler(object):
         if parameter['sample_eval'] is True and parameter['dataset'].split('/')[-1] == 'sap':
 
             # read the transactional data
-            original_entries = pd.read_csv(os.path.join(parameter['data_dir'], '03_sap', '2023-01-27_SF_extract.csv'), sep=',', encoding='utf-8').iloc[0:parameter['sample_size'], :]
+            original_entries = pd.read_csv(os.path.join(parameter['data_dir'], '03_sap', 'complete_file_4.csv'), sep=',', encoding='utf-8').iloc[0:parameter['sample_size'], :]
 
         # case: sample evaluation not enbaled
         elif parameter['sample_eval'] is False and parameter['dataset'].split('/')[-1] == 'sap':
 
             # read the transactional data
-            original_entries = pd.read_csv(os.path.join(parameter['data_dir'], '03_sap', '2023-01-27_SF_extract.csv'), sep=',', encoding='utf-8')
+            original_entries = pd.read_csv(os.path.join(parameter['data_dir'], '03_sap', 'complete_file_4.csv'), sep=',', encoding='utf-8')
 
         # log configuration processing
         now = dt.datetime.utcnow().strftime('%Y.%m.%d-%H:%M:%S')
@@ -563,13 +563,18 @@ class DataHandler(object):
 
         # convert categorical attributes to string
         cat_entries['Y_BLART'] = cat_entries['DocType'].astype(str)
-        cat_entries['Y_BLART_TEXT'] = cat_entries['DocTypeDescr'].astype(str)
         cat_entries['Y_HKONT'] = cat_entries['GL Accountnr'].astype(str)
-        cat_entries['Y_HKONT_TEXT'] = cat_entries['GL AccountDescr'].astype(str)
-        cat_entries['Y_TCODE'] = cat_entries['TransactionDescription'].astype(str)
+        cat_entries['Y_TCODE'] = cat_entries['Transaction'].astype(str)
         cat_entries['Y_BSCHL'] = cat_entries['PostingKey'].astype(str)
         cat_entries['Y_PRCTR'] = cat_entries['ProfitCenter'].astype(str)
-        cat_entries['Y_KOSTL'] = cat_entries['CostCenter'].astype(str)
+        cat_entries['Y_YEAR'] = cat_entries['Year'].astype(str)
+        cat_entries['Y_MONTH'] = cat_entries['Month'].astype(str)
+        #cat_entries['Y_BLART_TEXT'] = cat_entries['DocTypeDescr'].astype(str)
+        #cat_entries['Y_KOSTL'] = cat_entries['CostCenter'].astype(str)
+        #cat_entries['Y_HKONT_TEXT'] = cat_entries['GL AccountDescr'].astype(str)
+
+
+
 
         # convert JE creator field
         cat_entries['Y_USNAM'] = cat_entries['UserName Post'].astype(str)
@@ -615,7 +620,9 @@ class DataHandler(object):
         return num_entries[numerical_features]
 
     # one-hot encode categorical attributes of the EY dataset
-    def one_hot_encode_ernstyoung_categorical_attributes(self, entries, categorical_attributes, encoded_attributes, entries_statistics):
+    def one_hot_encode_ernstyoung_categorical_attributes(self, entries: object, categorical_attributes: object,
+                                                         encoded_attributes: object,
+                                                         entries_statistics: object) -> object:
 
         # init the encoded categorical entries
         encoded_cat_entries = pd.DataFrame(entries[categorical_attributes])
@@ -782,8 +789,8 @@ class DataHandler(object):
                 pair_b_debit_credit = pair[1]
 
                 # determine pairs debit and credit account features
-                pair_a_debit_credit_name = posting_features[posting_features[statistics['je_gl_account_field']] == str(pair_a_debit_credit)]['Y_HKONT_TEXT']
-                pair_b_debit_credit_name = posting_features[posting_features[statistics['je_gl_account_field']] == str(pair_b_debit_credit)]['Y_HKONT_TEXT']
+                pair_a_debit_credit_name = posting_features[posting_features[statistics['je_gl_account_field']] == str(pair_a_debit_credit)]['Y_HKONT'] #Y_HKONT_TEXT
+                pair_b_debit_credit_name = posting_features[posting_features[statistics['je_gl_account_field']] == str(pair_b_debit_credit)]['Y_HKONT'] #Y_HKONT_TEXT
 
                 # add graph debit and credit edge
                 entire_entries_graph.add_node(pair_a_debit_credit, account=pair_a_debit_credit_name)
@@ -818,8 +825,8 @@ class DataHandler(object):
                 pair_b_debit_credit = pair[1]
 
                 # determine pairs debit and credit account features
-                pair_a_debit_credit_name = posting_features[posting_features[statistics['je_gl_account_field']] == str(pair_a_debit_credit)]['Y_HKONT_TEXT']
-                pair_b_debit_credit_name = posting_features[posting_features[statistics['je_gl_account_field']] == str(pair_b_debit_credit)]['Y_HKONT_TEXT']
+                pair_a_debit_credit_name = posting_features[posting_features[statistics['je_gl_account_field']] == str(pair_a_debit_credit)]['Y_HKONT'] #Y_HKONT_TEXT
+                pair_b_debit_credit_name = posting_features[posting_features[statistics['je_gl_account_field']] == str(pair_b_debit_credit)]['Y_HKONT'] #Y_HKONT_TEXT
 
                 # add graph debit and credit edge
                 partial_entries_graph.add_node(pair_a_debit_credit, account=pair_a_debit_credit_name)
@@ -949,22 +956,20 @@ class DataHandler(object):
             if (pair_a_debit_credit == 'Credit') & (pair_b_debit_credit == 'Debit'):
 
                 # fill adjacency matrix: credit -> debit
-                #adj_matrix[pair[0]][pair[1]] = 1
                 adj_matrix[pair[1]][pair[0]] = 1
-                
+
             # case: first account debit, second account credit
-            elif (pair_a_debit_credit == 'Debit') & (pair_b_debit_credit == 'Credit'):
+            if (pair_a_debit_credit == 'Debit') & (pair_b_debit_credit == 'Credit'):
 
                 # fill adjacency matrix: debit -> credit
-                #adj_matrix[pair[1]][pair[0]] = 1
                 adj_matrix[pair[0]][pair[1]] = 1
 
             # case: first account similar to second
-            else:
+            #else:
 
-                # fill adjacency matrix (QH revise)
-                #adj_matrix[pair[1]][pair[0]] = 1
-                #adj_matrix[pair[0]][pair[1]] = 1
+                # fill adjacency matrix
+                #adj_matrix[pair[1]][pair[0]] = 0
+                #adj_matrix[pair[0]][pair[1]] = 0
 
         # return adjacency matrix
         return adj_matrix
@@ -992,22 +997,20 @@ class DataHandler(object):
             if (pair_a_debit_credit == 'Credit') & (pair_b_debit_credit == 'Debit'):
 
                 # fill adjacency matrix: credit -> debit
-                #adj_matrix[pair[0]][pair[1]] = 1
                 adj_matrix[pair[1]][pair[0]] = 1
 
             # case: first account debit, second account credit
-            elif (pair_a_debit_credit == 'Debit') & (pair_b_debit_credit == 'Credit'):
+            if (pair_a_debit_credit == 'Debit') & (pair_b_debit_credit == 'Credit'):
 
                 # fill adjacency matrix: debit -> credit
-                #adj_matrix[pair[1]][pair[0]] = 1
                 adj_matrix[pair[0]][pair[1]] = 1
 
             # case: first account similar to second
-            else:
+            #else:
 
-                # fill adjacency matrix (QH revise 2/28/2024)
-                #adj_matrix[pair[1]][pair[0]] = 1
-                #adj_matrix[pair[0]][pair[1]] = 1
+                # fill adjacency matrix
+                #adj_matrix[pair[1]][pair[0]] = 0
+                #adj_matrix[pair[0]][pair[1]] = 0
 
         # return adjacency matrix
         return adj_matrix
@@ -1275,7 +1278,10 @@ class DataHandler(object):
             entries[segment_feature] = entries[segment_feature].astype(float)
 
             # aggregate line item attributes
-            summed_entries = entries[entries[segment_feature] > 0.0].groupby(fields)[segment_feature].sum().reset_index()
+
+            summed_entries = entries[entries[segment_feature] >= 0.0].groupby(fields)[segment_feature].sum().reset_index()
+            #summed_entries = entries[entries[segment_feature] > 0.0].groupby(fields)[segment_feature].sum().reset_index() 12.8.2320
+            #summed_entries = entries[segment_feature].sum() 11.28.2023 change
 
             # trim aggregated line item attributes
             aggregated_entries[segment_feature] = summed_entries[segment_feature].values
