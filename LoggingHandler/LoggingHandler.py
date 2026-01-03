@@ -82,6 +82,30 @@ class LoggingHandler(object):
             , 'density_pr_auc_all'
             , 'density_pr_auc_global'
             , 'density_pr_auc_local'
+            , 'od_accuracy_all'    #revise 3/21/2025
+            , 'od_precision_all'
+            , 'od_recall_all'
+            , 'od_f1_score_all'
+            , 'od_accuracy_global'
+            , 'od_precision_global'
+            , 'od_recall_global'
+            , 'od_f1_score_global'
+            , 'od_accuracy_local'
+            , 'od_precision_local'
+            , 'od_recall_local'
+            , 'od_f1_score_local'
+            , 're_accuracy_all'
+            , 're_precision_all'
+           , 're_recall_all'
+            , 're_f1_score_all'
+        , 're_accuracy_global'
+        , 're_precision_global'
+        , 're_recall_global'
+        , 're_f1_score_global'
+        , 're_accuracy_local'
+        , 're_precision_local'
+        , 're_recall_local'
+        , 're_f1_score_local'
         ]
         self.experiment_log = pd.DataFrame(columns=summary_cols)
 
@@ -139,10 +163,42 @@ class LoggingHandler(object):
             , 'density_pr_auc_all': np.round(experiment_statistics['density_pr_auc_all'], 6)
             , 'density_pr_auc_global': np.round(experiment_statistics['density_pr_auc_global'], 6)
             , 'density_pr_auc_local': np.round(experiment_statistics['density_pr_auc_local'], 6)
+                       # === Novas métricas de classificação ===
+            #, revise 3/21/2025
+            , 'od_accuracy_all': np.round(experiment_statistics['od_accuracy_all'], 6)
+            , 'od_precision_all': np.round(experiment_statistics['od_precision_all'], 6)
+            , 'od_recall_all': np.round(experiment_statistics['od_recall_all'], 6)
+            , 'od_f1_score_all': np.round(experiment_statistics['od_f1_score_all'], 6)
+
+            , 'od_accuracy_global': np.round(experiment_statistics['od_accuracy_global'], 6)
+            , 'od_precision_global': np.round(experiment_statistics['od_precision_global'], 6)
+            , 'od_recall_global': np.round(experiment_statistics['od_recall_global'], 6)
+            , 'od_f1_score_global': np.round(experiment_statistics['od_f1_score_global'], 6)
+
+            , 'od_accuracy_local': np.round(experiment_statistics['od_accuracy_local'], 6)
+            , 'od_precision_local': np.round(experiment_statistics['od_precision_local'], 6)
+            , 'od_recall_local': np.round(experiment_statistics['od_recall_local'], 6)
+            , 'od_f1_score_local': np.round(experiment_statistics['od_f1_score_local'], 6)
+
+            , 're_accuracy_all': np.round(experiment_statistics['re_accuracy_all'], 6)
+            , 're_precision_all': np.round(experiment_statistics['re_precision_all'], 6)
+            , 're_recall_all': np.round(experiment_statistics['re_recall_all'], 6)
+            , 're_f1_score_all': np.round(experiment_statistics['re_f1_score_all'], 6)
+
+            , 're_accuracy_global': np.round(experiment_statistics['re_accuracy_global'], 6)
+            , 're_precision_global': np.round(experiment_statistics['re_precision_global'], 6)
+            , 're_recall_global': np.round(experiment_statistics['re_recall_global'], 6)
+            , 're_f1_score_global': np.round(experiment_statistics['re_f1_score_global'], 6)
+
+            , 're_accuracy_local': np.round(experiment_statistics['re_accuracy_local'], 6)
+            , 're_precision_local': np.round(experiment_statistics['re_precision_local'], 6)
+            , 're_recall_local': np.round(experiment_statistics['re_recall_local'], 6)
+            , 're_f1_score_local': np.round(experiment_statistics['re_f1_score_local'], 6)
         }
 
+
         # determine and collect training summary statistics of current epoch
-        self.experiment_log = self.experiment_log.append(exp_stats, ignore_index=True)
+        self.experiment_log = self.experiment_log._append(exp_stats, ignore_index=True)
 
         # save current experiment statistics
         self.experiment_log.to_csv(os.path.join(directory, file_name), sep=',', encoding='utf-8')
