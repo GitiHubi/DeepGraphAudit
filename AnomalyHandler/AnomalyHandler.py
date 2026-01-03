@@ -25,6 +25,7 @@ from pyod.models.cblof import CBLOF
 from pyod.models.lof import LOF
 from pyod.models.ocsvm import OCSVM
 
+
 # import scikit learn utilities
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.metrics import make_scorer
@@ -41,7 +42,7 @@ class AnomalyHandler(object):
         pass
 
     # create global graph anomalies
-    def generate_global_graph_anomalies(self, statistics, entries, top=20, no_anomalies=10, seed=1111):
+    def generate_global_graph_anomalies(self, statistics, entries, top=200, no_anomalies=100, seed=1111):
 
         # init stochastic random samplers
         np.random.seed(seed + 1)  # +1 to differentiate random global and local anomalies
@@ -50,19 +51,22 @@ class AnomalyHandler(object):
         # aggregate journal entry feature information per entry
         entries_aggregated = self.aggregate_entries_per_belnr(statistics, fields=[statistics['je_identifier_field']] + statistics['je_header_features'], entries=entries)
 
-        # determine journal entry feature information count
+        #determine journal entry feature information count
         entries_aggregated_count = entries_aggregated.groupby(statistics['je_header_features'] + statistics['je_segment_features_categorical']).count().reset_index()
+        #entries_aggregated_count= entries_aggregated_count.reset_index()
 
-        # filter top-n most occurring journal entry feature combinations
-        entries_aggregated_top_feature_combinations = entries_aggregated_count.sort_values(by=statistics['je_identifier_field'], ascending=False).iloc[0:top]
+        # Randomly select 20 feature combinations instead of filtering top-20
+        actual_combinations = len(entries_aggregated_count)
+        sample_size = min(top, actual_combinations)
+        entries_aggregated_top_feature_combinations = entries_aggregated_count.sample(n=sample_size)
 
-        # filter top-n most occurring journal entry feature combinations
         entries_aggregated_top_feature_combinations = entries_aggregated_top_feature_combinations[statistics['je_header_features'] + statistics['je_segment_features_categorical']]
 
         # init data frame of created global anomalies
         global_anomalies = pd.DataFrame(columns=entries.columns)
 
         # randomly sample top-n most occurring journal entry feature combinations
+        no_anomalies = min(no_anomalies,top)
         anomaly_samples_ids = np.random.choice(list(range(0, top)), size=no_anomalies, replace=False)
 
         # iterate over number of to be created anomalies
@@ -100,7 +104,7 @@ class AnomalyHandler(object):
         return global_anomalies
 
     # create local graph anomalies
-    def generate_local_graph_anomalies(self, statistics, entries, top=20, no_anomalies=10, seed=1111):
+    def generate_local_graph_anomalies(self, statistics, entries, top=200, no_anomalies=100, seed=1111):
 
         # init stochastic random samplers
         np.random.seed(seed + 2)  # +2 to differentiate random global and local anomalies
@@ -224,7 +228,7 @@ class AnomalyHandler(object):
 
     # run latent space anomaly detection
     def run_anomaly_detection(self, parameter, results, entries):
-        #QH revised 2/28/2024
+
         # init number of clusters
         results['no_detected_clusters'] = 0
 
@@ -252,7 +256,7 @@ class AnomalyHandler(object):
         if parameter['algo'] == 'ocsvm':
 
             # init the one-class anomaly detection model
-            ocsvm_model = OCSVM()
+            ocsvm_model = OCSVM(contamination=200/19134)
             ocsvm_model.fit(entries[['z1', 'z2']])
 
             # determine anomaly detection prediction
@@ -269,7 +273,7 @@ class AnomalyHandler(object):
             #parameter['best_leaf_size'] = parameter['leaf_size']
 
             # init the local outlier factor model
-            lof_model = LOF()
+            lof_model = LOF(contamination=200/19134)
             lof_model.fit(entries[['z1', 'z2']])
 
             # determine anomaly detection prediction
@@ -282,7 +286,7 @@ class AnomalyHandler(object):
         elif parameter['algo'] == 'iforest':
 
             # init the local outlier factor model
-            iforest_model = IForest()
+            iforest_model = IForest(contamination=200/19134)
             iforest_model.fit(entries[['z1', 'z2']])
 
             # determine anomaly detection prediction
@@ -294,7 +298,7 @@ class AnomalyHandler(object):
         elif parameter['algo'] == 'knn':
 
             # init the local outlier factor model
-            knn_model = KNN(n_neighbors=parameter['n_neighbors_knn'], leaf_size=parameter['leaf_size_knn'])
+            knn_model = KNN(contamination=200/19134, n_neighbors=parameter['n_neighbors_knn'], leaf_size=parameter['leaf_size_knn'])
             knn_model.fit(entries[['z1', 'z2']])
             #pred = knn_model.predict(entries[['z1', 'z2']])
 
@@ -320,7 +324,7 @@ class AnomalyHandler(object):
         elif parameter['algo'] == 'cblof':
 
             # init the local outlier factor model
-            cblof_model = CBLOF()
+            cblof_model = CBLOF(contamination=200/19134)
             cblof_model.fit(entries[['z1', 'z2']])
             #pred = cblof_model.predict(entries[['z1', 'z2']])
 
