@@ -12,7 +12,7 @@ This is the exact research code used to produce the paper's results. Shared for 
 
 ## 🕸️ Main Research Idea
 
-Each journal entry is turned into a small graph, then embedded and reconstructed by a **graph variational autoencoder**. Entries the model reconstructs poorly, or whose embedding looks unusual, are flagged for audit follow-up.
+Each journal entry is turned into a small graph, then embedded and reconstructed by a **Graph Autoencoder**. Entries the model reconstructs poorly, or whose embedding looks unusual, are flagged for audit follow-up.
 
 ```
   Journal Entry                                                 Graph-AE 
