@@ -15,11 +15,11 @@ This is the exact research code used to produce the paper's results. Shared for 
 Each journal entry is turned into a small graph, then embedded and reconstructed by a **graph variational autoencoder**. Entries the model reconstructs poorly, or whose embedding looks unusual, are flagged for audit follow-up.
 
 ```
-journal entry               entry graph                     graph-VAE                     scoring
-┌───────────────┐   nodes = accounts posted to      ┌───────────────────┐        reconstruction error
-│  line items   │ ─ edges = debit → credit ───────▶ │ encode → z (2D) →  │ ─────▶ or outlier score on z
-│  (accounts,   │   features = account/entry attrs  │       decode       │        (IForest / LOF / OCSVM /
-│  amounts, …)  │                                    └───────────────────┘        HDBSCAN / …)
+  journal entry                entry graph                      graph-VAE                     scoring
+┌───────────────┐        nodes = accounts posted to        ┌───────────────────┐         reconstruction error
+│  line items   │ ───────▶ edges = debit → credit ───────▶ │ encode → z (2D) → │ ─────▶  or outlier score on z
+│  (accounts,   │      features = account/entry attrs      │       decode      │          (IForest / LOF / …)
+│  amounts, …)  │                                          └───────────────────┘
 └───────────────┘
 ```
 
