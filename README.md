@@ -1,16 +1,16 @@
 # DeepGraphAudit
 
-**Graph neural networks for auditing accounting journal entries.**
+**Graph Neural Networks for Auditing Accounting Journal Entries.**
 
 Reference implementation for:
 
 > Huang, Q., Schreyer, M., Michiles Jr, N. R., & Vasarhelyi, M. A. (2026). [*Connecting the Dots: Graph Neural Networks for Auditing Accounting Journal Entries.*](https://publications.aaahq.org/ajpt/article-abstract/doi/10.2308/AJPT-2024-058/23197/Connecting-the-Dots-Graph-Neural-Networks-for) Auditing: A Journal of Practice & Theory, 1–27.
 
-This is the exact research code used to produce the paper's results — shared for transparency and reproducibility, not polished for retail. It has seen more `print()` statements than unit tests, and it will happily limit itself to 4 CPU threads whether you asked for that or not. Auditors double-check things; so should you before trusting it with your general ledger.
+This is the exact research code used to produce the paper's results. Shared for transparency and reproducibility, not polished for retail.
 
 ---
 
-## 🕸️ How it works
+## 🕸️ Main Research Idea
 
 Each journal entry is turned into a small graph, then embedded and reconstructed by a **graph variational autoencoder**. Entries the model reconstructs poorly, or whose embedding looks unusual, are flagged for audit follow-up.
 
@@ -28,7 +28,7 @@ journal entry               entry graph                     graph-VAE           
 - **Baseline**: a non-graph, flat-feature autoencoder for comparison (`-mode baseline`).
 - **Evaluation**: synthetic *global* and *local* anomalies are injected into the data, and detection is scored via ROC-AUC / PR-AUC / precision / recall / F1.
 
-## 🗂️ Repository layout
+## 🗂️ Repository Structure
 
 | Path | Purpose |
 |---|---|
@@ -77,7 +77,7 @@ python main.py -dataset ey -mode baseline -wandb False
 
 Add `-sample_eval True -sample_size 501` to smoke-test on a small slice of the data before a full run.
 
-## 🎛️ Key configuration flags
+## 🎛️ Configuration Flags
 
 Full list with defaults: `python main.py -h`.
 
@@ -95,7 +95,16 @@ Each run writes a timestamped, parameter-encoded folder under `200_experiments/`
 
 `00_param/` config · `01_statistics/` loss & metric logs · `02_results/` entries enriched with embeddings (`z1`,`z2`), reconstruction error, and anomaly score · `03_visualizations/` static + interactive embedding plots.
 
-## 🔁 Reproducing the paper's grid search
+## 🧪 Running a Single Experiment
+
+```bash
+python main.py -dataset ey -mode dynamic -experiment graph_autoencoder -grid False \
+  -train_iterations 500 -feat_embed_dim 12 -beta 0.5 -algo iforest -exp_postfix single_run
+```
+
+Swap in `-dataset sap` for the SAP data. Once a single run looks right, move on to a full sweep below.
+
+## 🔁 Configuring Hyperparameter Sweeps
 
 ```bash
 bash start_ey_grid_search.sh   # sweeps beta, feat_embed_dim, seed over the EY dataset
