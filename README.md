@@ -15,12 +15,12 @@ This is the exact research code used to produce the paper's results. Shared for 
 Each journal entry is turned into a small graph, then embedded and reconstructed by a **graph variational autoencoder**. Entries the model reconstructs poorly, or whose embedding looks unusual, are flagged for audit follow-up.
 
 ```
-  Journal Entry                 Entry Graph                      Graph-AE                 Anomaly Scoring
-┌───────────────┐         nodes = accounts posted to        ┌─────────────────┐         reconstruction error
-│  line items   │  ──────▶  edges = debit → credit  ──────▶ │     encode      │ ─────▶  or outlier score on z
-│  (accounts,   │       features = account/entry attrs      │    →z(2D)→      │          (IForest / LOF / …)
-│  amounts, …)  │                                           │     decode      │
-└───────────────┘                                           └─────────────────┘
+  Journal Entry                                                 Graph-AE 
+┌───────────────┐               Entry Graph                 ┌──────────────┐           Anomaly Scoring
+│  line items   │  ──────▶  edges = debit → credit  ──────▶ │    encode    │ ─────▶  reconstruction error
+│  (accounts,   │         nodes = accounts posted to        │    →z(2D)→   │         or outlier score on z
+│  amounts, …)  │       features = account/entry attrs      │    decode    │          (IForest / LOF / …)
+└───────────────┘                                           └──────────────┘
 ```
 
 - **Dynamic mode** (default): each entry keeps its own (variable) number of accounts as graph nodes.
