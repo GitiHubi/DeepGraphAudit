@@ -118,7 +118,7 @@ Edit the array variables at the top of each script to match your compute budget.
 ```bibtex
 @article{huang2026connecting,
   title   = {Connecting the Dots: Graph Neural Networks for Auditing Accounting Journal Entries},
-  author  = {Huang, Qiao and Schreyer, Marco and Michiles Jr, Norton R. and Vasarhelyi, Miklos A.},
+  author  = {Huang, Qing and Schreyer, Marco and Michiles Jr, Nilson R. and Vasarhelyi, Miklos A.},
   journal = {Auditing: A Journal of Practice \& Theory},
   year    = {2026},
   pages   = {1--27}
