@@ -6,7 +6,7 @@ Reference implementation for:
 
 > Huang, Q., Schreyer, M., Michiles Jr, N. R., & Vasarhelyi, M. A. (2026). [*Connecting the Dots: Graph Neural Networks for Auditing Accounting Journal Entries.*](https://publications.aaahq.org/ajpt/article-abstract/doi/10.2308/AJPT-2024-058/23197/Connecting-the-Dots-Graph-Neural-Networks-for) Auditing: A Journal of Practice & Theory, 1–27.
 
-This is the exact research code used to produce the paper's results. Shared for transparency and reproducibility, not polished for retail.
+This is the research code used to produce the paper's results. Shared for transparency and reproducibility, not polished for retail.
 
 ---
 
